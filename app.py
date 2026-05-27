@@ -1,3 +1,5 @@
+%%writefile app.py
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -8,34 +10,24 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import random
 
-# ==========================================
-# PAGE CONFIG
-# ==========================================
+# =====================================
+# CONFIG
+# =====================================
 
 st.set_page_config(
-    page_title="ABM Pemilihan Jurusan Kuliah",
+    page_title="ABM Pemilihan Jurusan",
     page_icon="🎓",
     layout="wide"
 )
 
-# ==========================================
-# TITLE
-# ==========================================
-
 st.title("🎓 Simulasi Pemilihan Jurusan Kuliah")
-st.subheader("Agent-Based Modeling (ABM) + Monte Carlo Simulation")
+st.subheader("Agent-Based Modeling + Monte Carlo")
 
-st.markdown("""
-Dashboard ini mensimulasikan bagaimana siswa memilih jurusan kuliah
-berdasarkan kemampuan logika, kreativitas, sosial,
-tekanan orang tua, ekonomi, dan tingkat kepercayaan diri.
-""")
-
-# ==========================================
+# =====================================
 # SIDEBAR
-# ==========================================
+# =====================================
 
-st.sidebar.header("⚙️ Pengaturan Simulasi")
+st.sidebar.header("⚙️ Pengaturan")
 
 num_agents = st.sidebar.slider(
     "Jumlah Agent",
@@ -45,33 +37,38 @@ num_agents = st.sidebar.slider(
 )
 
 iterations = st.sidebar.slider(
-    "Jumlah Monte Carlo Iteration",
+    "Monte Carlo Iteration",
     100,
     5000,
     1000
 )
 
-noise_level = st.sidebar.slider(
-    "Noise / Randomness",
-    0.0,
-    0.5,
-    0.05
+scenario = st.sidebar.selectbox(
+    "Pilih Skenario",
+    [
+        "Tanpa Intervensi",
+        "Reaktif",
+        "Preventif",
+        "Tekanan Orang Tua Tinggi"
+    ]
 )
 
-# ==========================================
-# UPLOAD CSV
-# ==========================================
-
-st.sidebar.subheader("📂 Upload Dataset")
-
 uploaded_file = st.sidebar.file_uploader(
-    "Upload CSV Baru",
+    "Upload CSV",
     type=["csv"]
 )
 
-# ==========================================
-# DEFAULT DATASET
-# ==========================================
+# =====================================
+# GENERATE DATASET
+# =====================================
+
+states = [
+    "Bingung",
+    "Eksplorasi",
+    "Yakin",
+    "Salah Jurusan",
+    "Cocok Jurusan"
+]
 
 def generate_agents(total_agent):
 
@@ -79,53 +76,42 @@ def generate_agents(total_agent):
 
     for i in range(total_agent):
 
-        agent = {
+        data.append({
+
             "id": i,
 
-            "logic": random.uniform(0, 1),
+            "logic": random.uniform(0,1),
 
-            "creativity": random.uniform(0, 1),
+            "creativity": random.uniform(0,1),
 
-            "social": random.uniform(0, 1),
+            "social": random.uniform(0,1),
 
-            "economy": random.uniform(0, 1),
+            "economy": random.uniform(0,1),
 
-            "pressure_parent": random.uniform(0, 1),
+            "pressure_parent": random.uniform(0,1),
 
-            "confidence": random.uniform(0.4, 1.0)
-        }
+            "confidence": random.uniform(0.4,1.0),
 
-        data.append(agent)
+            "state": random.choice(states)
+        })
 
     return pd.DataFrame(data)
 
-# ==========================================
+# =====================================
 # LOAD DATA
-# ==========================================
+# =====================================
 
 if uploaded_file is not None:
 
     df_agents = pd.read_csv(uploaded_file)
 
-    st.success("Dataset berhasil diupload!")
-
 else:
 
     df_agents = generate_agents(num_agents)
 
-# ==========================================
-# TAMPILKAN DATASET
-# ==========================================
-
-st.subheader("📋 Dataset Agent")
-
-st.dataframe(df_agents.head(10))
-
-st.write("Jumlah Agent:", len(df_agents))
-
-# ==========================================
-# DEFINISI JURUSAN
-# ==========================================
+# =====================================
+# JURUSAN
+# =====================================
 
 majors = {
 
@@ -160,9 +146,9 @@ majors = {
     }
 }
 
-# ==========================================
-# FUNCTION MATCH SCORE
-# ==========================================
+# =====================================
+# FUNCTION
+# =====================================
 
 def calculate_match(agent, major_profile):
 
@@ -174,21 +160,44 @@ def calculate_match(agent, major_profile):
 
     return score
 
-# ==========================================
-# PARENTAL PRESSURE
-# ==========================================
-
 def parental_pressure_effect(base_score, pressure):
 
-    noise = np.random.normal(0, noise_level)
+    noise = np.random.normal(0, 0.05)
 
     final_score = base_score - (pressure * 0.2) + noise
 
     return max(0, min(1, final_score))
 
-# ==========================================
-# CHOOSE MAJOR
-# ==========================================
+def intervention(agent, scenario):
+
+    if scenario == "Tanpa Intervensi":
+
+        return agent
+
+    elif scenario == "Reaktif":
+
+        if agent["confidence"] < 0.5:
+            agent["confidence"] += 0.2
+
+    elif scenario == "Preventif":
+
+        agent["confidence"] += 0.1
+
+    elif scenario == "Tekanan Orang Tua Tinggi":
+
+        agent["pressure_parent"] += 0.3
+
+    agent["confidence"] = min(
+        agent["confidence"],
+        1.0
+    )
+
+    agent["pressure_parent"] = min(
+        agent["pressure_parent"],
+        1.0
+    )
+
+    return agent
 
 def choose_major(agent):
 
@@ -209,48 +218,61 @@ def choose_major(agent):
 
     return best_major, scores
 
-# ==========================================
-# RUN SIMULATION
-# ==========================================
-
-st.subheader("🚀 Menjalankan Simulasi Monte Carlo...")
+# =====================================
+# SIMULATION
+# =====================================
 
 simulation_history = []
 
-progress_bar = st.progress(0)
+progress = st.progress(0)
 
 for iteration in range(iterations):
 
-    for _, agent in df_agents.iterrows():
+    for _, row in df_agents.iterrows():
 
-        major, scores = choose_major(agent)
+        agent = row.to_dict()
+
+        updated_agent = intervention(
+            agent,
+            scenario
+        )
+
+        major, scores = choose_major(updated_agent)
 
         simulation_history.append({
 
             "iteration": iteration,
 
-            "agent_id": agent["id"],
+            "agent_id": updated_agent["id"],
+
+            "scenario": scenario,
 
             "selected_major": major,
 
             "score": max(scores.values()),
 
-            "confidence": agent["confidence"],
+            "confidence": updated_agent["confidence"],
 
-            "pressure_parent": agent["pressure_parent"]
+            "pressure_parent": updated_agent["pressure_parent"]
         })
 
-    progress_bar.progress((iteration + 1) / iterations)
+    progress.progress((iteration+1)/iterations)
 
 df_simulation = pd.DataFrame(simulation_history)
 
-st.success("Simulasi selesai!")
+# =====================================
+# DASHBOARD
+# =====================================
 
-# ==========================================
-# DISTRIBUSI JURUSAN
-# ==========================================
+st.subheader("📋 Dataset Agent")
 
-st.subheader("📊 Distribusi Pemilihan Jurusan")
+st.dataframe(df_agents.head(10))
+
+# =====================================
+# COUNT PLOT
+# =====================================
+
+st.subheader("📊 Distribusi Jurusan")
 
 fig1, ax1 = plt.subplots(figsize=(10,5))
 
@@ -264,11 +286,9 @@ plt.xticks(rotation=15)
 
 st.pyplot(fig1)
 
-# ==========================================
-# RATA-RATA SCORE
-# ==========================================
-
-st.subheader("📈 Rata-rata Match Score")
+# =====================================
+# SUMMARY
+# =====================================
 
 summary = df_simulation.groupby(
     "selected_major"
@@ -279,13 +299,13 @@ summary = df_simulation.groupby(
     "std"
 ])
 
+st.subheader("📈 Statistik")
+
 st.dataframe(summary)
 
-# ==========================================
-# TREND MONTE CARLO
-# ==========================================
-
-st.subheader("📉 Trend Monte Carlo Simulation")
+# =====================================
+# TREND
+# =====================================
 
 trend = df_simulation.groupby(
     "iteration"
@@ -295,19 +315,13 @@ fig2, ax2 = plt.subplots(figsize=(12,5))
 
 ax2.plot(trend)
 
-ax2.set_xlabel("Iteration")
-
-ax2.set_ylabel("Average Score")
-
 ax2.set_title("Trend Monte Carlo")
 
 st.pyplot(fig2)
 
-# ==========================================
+# =====================================
 # HEATMAP
-# ==========================================
-
-st.subheader("🔥 Heatmap Average Score")
+# =====================================
 
 pivot = pd.pivot_table(
     df_simulation,
@@ -316,7 +330,7 @@ pivot = pd.pivot_table(
     aggfunc=np.mean
 )
 
-fig3, ax3 = plt.subplots(figsize=(6,4))
+fig3, ax3 = plt.subplots(figsize=(7,4))
 
 sns.heatmap(
     pivot,
@@ -327,89 +341,55 @@ sns.heatmap(
 
 st.pyplot(fig3)
 
-# ==========================================
-# HISTOGRAM CONFIDENCE
-# ==========================================
-
-st.subheader("🧠 Distribusi Confidence Agent")
-
-fig4, ax4 = plt.subplots(figsize=(8,4))
-
-ax4.hist(
-    df_agents["confidence"],
-    bins=20
-)
-
-ax4.set_xlabel("Confidence")
-
-ax4.set_ylabel("Jumlah Agent")
-
-st.pyplot(fig4)
-
-# ==========================================
+# =====================================
 # PIE CHART
-# ==========================================
+# =====================================
 
 st.subheader("🥧 Persentase Jurusan")
 
-major_counts = df_simulation["selected_major"].value_counts()
+major_counts = df_simulation[
+    "selected_major"
+].value_counts()
 
-fig5, ax5 = plt.subplots(figsize=(7,7))
+fig4, ax4 = plt.subplots(figsize=(7,7))
 
-ax5.pie(
+ax4.pie(
     major_counts,
     labels=major_counts.index,
     autopct='%1.1f%%'
 )
 
-st.pyplot(fig5)
+st.pyplot(fig4)
 
-# ==========================================
-# EXPORT CSV
-# ==========================================
-
-st.subheader("💾 Download Hasil Simulasi")
+# =====================================
+# DOWNLOAD CSV
+# =====================================
 
 csv = df_simulation.to_csv(index=False)
 
 st.download_button(
-    label="⬇️ Download CSV Hasil Simulasi",
+    label="⬇️ Download CSV",
     data=csv,
     file_name="simulation_results.csv",
     mime="text/csv"
 )
 
-# ==========================================
-# DOWNLOAD SUMMARY
-# ==========================================
-
-summary_csv = summary.to_csv()
-
-st.download_button(
-    label="⬇️ Download Summary CSV",
-    data=summary_csv,
-    file_name="montecarlo_summary.csv",
-    mime="text/csv"
-)
-
-# ==========================================
+# =====================================
 # FOOTER
-# ==========================================
+# =====================================
 
 st.markdown("---")
 
 st.markdown("""
-### Tentang Project
+### Project Information
 
-Project ini menggunakan:
-
-- Agent-Based Modeling (ABM)
+- Agent-Based Modeling
 - Monte Carlo Simulation
-- 200+ Agent
+- 200 Agent
 - 1000 Iterasi
-- Streamlit Dashboard
+- Multi Scenario Simulation
 - Upload CSV Dinamis
 
 Tema:
-**Simulasi Pemilihan Jurusan Kuliah**
+Simulasi Pemilihan Jurusan Kuliah
 """)
