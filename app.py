@@ -289,7 +289,7 @@ st.caption(
 st.markdown("<br>", unsafe_allow_html=True)
 
 # =========================================================
-# DATA LOADER (DIPASTIKAN MEMPROSES SELURUH DATA CSV)
+# DATA LOADER
 # =========================================================
 
 student_profiles = []
@@ -297,10 +297,11 @@ student_profiles = []
 if uploaded_file is not None:
 
     try:
-        # Membaca seluruh data tanpa limitasi baris
+
         df_upload = pd.read_csv(uploaded_file)
 
         required_cols = [
+
             "student_id",
             "interest",
             "ability",
@@ -310,22 +311,34 @@ if uploaded_file is not None:
             "distortion"
         ]
 
-        if all(col in df_upload.columns for col in required_cols):
-            # Mengubah seluruh isi baris dataframe menjadi format list dictionary
-            student_profiles = df_upload[required_cols].to_dict(orient="records")
+        if all(
+            col in df_upload.columns
+            for col in required_cols
+        ):
+
+            student_profiles = df_upload[
+                required_cols
+            ].to_dict(orient="records")
 
             st.sidebar.success(
-                f"Berhasil memuat seluruh data: "
+                f"Berhasil memuat "
                 f"{len(student_profiles)} agen dari CSV!"
             )
+
         else:
-            st.sidebar.error("Kolom CSV tidak sesuai! Pastikan memiliki kolom: " + ", ".join(required_cols))
+
+            st.sidebar.error(
+                "Kolom CSV tidak sesuai!"
+            )
 
     except Exception as e:
-        st.sidebar.error(f"Error membaca file: {e}")
+
+        st.sidebar.error(
+            f"Error membaca file: {e}"
+        )
 
 # =========================================================
-# DEFAULT GENERATOR (Hanya aktif jika tidak ada file yang diupload)
+# DEFAULT GENERATOR
 # =========================================================
 
 if not student_profiles:
@@ -367,9 +380,11 @@ if not student_profiles:
 
 if run_btn or 'history_df' not in st.session_state:
 
-    with st.spinner("Menjalankan 1000 Iterasi Monte Carlo..."):
+    with st.spinner(
+        "Menjalankan 1000 Iterasi Monte Carlo..."
+    ):
 
-        # Menginisiasi agen berdasarkan panjang data riil student_profiles (bisa > 100 baris)
+        # PAKAI SEMUA DATA
         agents = [
             StudentAgent(profile)
             for profile in student_profiles
@@ -398,7 +413,6 @@ if run_btn or 'history_df' not in st.session_state:
                     else 0
                 )
 
-                # Fleksibel mengikuti total agen riil yang ter-upload
                 if last_decided < (len(agents) * 0.4):
                     recommendation = 0.7
                 else:
@@ -522,9 +536,6 @@ if run_btn or 'history_df' not in st.session_state:
         st.session_state['current_scenario'] = (
             scenario_type
         )
-        
-        # Menyimpan informasi total baris siswa yang aktif disimulasikan
-        st.session_state['total_active_agents'] = len(agents)
 
 # =========================================================
 # LOAD CACHE
@@ -535,8 +546,6 @@ df_res = st.session_state['history_df']
 dist_res = st.session_state['final_distribution']
 
 scen_res = st.session_state['current_scenario']
-
-total_agents_simulated = st.session_state.get('total_active_agents', len(student_profiles))
 
 # =========================================================
 # RINGKASAN
@@ -558,7 +567,7 @@ if tampilan_terpilih == "Ringkasan":
 
     col3.metric(
         label="Siswa Decided Akhir",
-        value=f"{df_res['DECIDED'].iloc[-1]} / {total_agents_simulated} Siswa"
+        value=f"{df_res['DECIDED'].iloc[-1]} Siswa"
     )
 
     col4.metric(
@@ -573,9 +582,12 @@ if tampilan_terpilih == "Ringkasan":
     )
 
     st.write(f"""
-    Berdasarkan hasil komputasi berbasis agen terhadap **{total_agents_simulated} total siswa aktif**,
-    sebanyak {len(df_res)} iterasi skenario intervensi menggunakan **{scen_res}**
-    terbukti mempercepat kestabilan keputusan pemilihan jurusan kuliah.
+    Berdasarkan hasil komputasi berbasis agen
+    sebanyak {len(df_res)} iterasi,
+    skenario intervensi menggunakan
+    {scen_res}
+    terbukti mempercepat kestabilan
+    keputusan pemilihan jurusan kuliah.
     """)
 
 # =========================================================
@@ -601,7 +613,8 @@ elif tampilan_terpilih == "Visualisasi":
         ],
 
         title=(
-            f"Tren Perubahan Status Psikologis Siswa (Total: {total_agents_simulated} Agen)"
+            "Tren Perubahan Status "
+            "Psikologis Siswa"
         ),
 
         color_discrete_map={
@@ -617,7 +630,7 @@ elif tampilan_terpilih == "Visualisasi":
     if tampilkan_ambang:
 
         fig_line.add_hline(
-            y=total_agents_simulated * 0.8,
+            y=len(student_profiles)*0.8,
             line_dash="dash",
             line_color="blue",
             annotation_text="Threshold 80%"
