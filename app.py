@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("🧠 Dashboard Simulasi Dinamika Kecemasan Mahasiswa")
-st.subtitle("Pendekatan Agent-Based Modeling dengan Evaluasi Protokol CBT")
+st.markdown("### Pendekatan Agent-Based Modeling dengan Evaluasi Protokol CBT")
 st.markdown("""
 Dashboard ini dirancang sesuai dengan pedoman UAS untuk mensimulasikan bagaimana intervensi 
 *Cognitive Behavioral Therapy* (CBT) dapat meredam tingkat kecemasan mahasiswa terhadap stresor lingkungan.
