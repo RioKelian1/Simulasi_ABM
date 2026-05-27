@@ -103,7 +103,7 @@ def monte_carlo(intervention_type, custom_profiles=None):
     return avg_state, avg_choice
 
 # ========== SIDEBAR ==========
-st.sidebar.header("Upload Data Profil Siswa (Opsional)")
+st.sidebar.header("Simulasi)")
 uploaded_file = st.sidebar.file_uploader("CSV (interest, skill, nilai)", type="csv")
 custom_profiles = None
 if uploaded_file:
