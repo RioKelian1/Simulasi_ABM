@@ -23,7 +23,7 @@ st.set_page_config(
 # =====================================================
 
 st.title("🎓 Simulasi Pemilihan Jurusan Kuliah")
-st.subheader("Agent-Based Modeling + Monte Carlo")
+st.subheader("Agent-Based Modeling + Monte Carlo Simulation")
 
 # =====================================================
 # SIDEBAR
@@ -58,25 +58,6 @@ uploaded_file = st.sidebar.file_uploader(
     "Upload Dataset CSV",
     type=["csv"]
 )
-
-# =====================================================
-# STATE
-# =====================================================
-
-states = [
-
-    "Belum Memilih",
-
-    "Eksplorasi",
-
-    "Konsultasi",
-
-    "Memutuskan",
-
-    "Cocok Jurusan",
-
-    "Salah Jurusan"
-]
 
 # =====================================================
 # GENERATE AGENT
@@ -119,14 +100,14 @@ if uploaded_file is not None:
 
     df_agents = pd.read_csv(uploaded_file)
 
-    st.success("Dataset berhasil diupload")
+    st.success("Dataset berhasil diupload!")
 
 else:
 
     df_agents = generate_agents(num_agents)
 
 # =====================================================
-# MAJORS
+# MAJOR PROFILE
 # =====================================================
 
 majors = {
@@ -163,12 +144,16 @@ majors = {
 }
 
 # =====================================================
-# SCORE
+# NOISE
 # =====================================================
 
 def monte_carlo_noise():
 
     return np.random.normal(0, 0.05)
+
+# =====================================================
+# MATCH SCORE
+# =====================================================
 
 def calculate_match(agent, profile):
 
@@ -189,6 +174,29 @@ def calculate_match(agent, profile):
     score += monte_carlo_noise()
 
     return max(0, min(1, score))
+
+# =====================================================
+# CHOOSE MAJOR
+# =====================================================
+
+def choose_major(agent):
+
+    scores = {}
+
+    for major_name, profile in majors.items():
+
+        score = calculate_match(
+            agent,
+            profile
+        )
+
+        scores[major_name] = score
+
+    best_major = max(scores, key=scores.get)
+
+    best_score = max(scores.values())
+
+    return best_major, best_score
 
 # =====================================================
 # INTERVENTION
@@ -236,35 +244,19 @@ def intervention(agent, scenario):
     return agent
 
 # =====================================================
-# CHOOSE MAJOR
-# =====================================================
-
-def choose_major(agent):
-
-    scores = {}
-
-    for major_name, profile in majors.items():
-
-        score = calculate_match(
-            agent,
-            profile
-        )
-
-        scores[major_name] = score
-
-    best_major = max(scores, key=scores.get)
-
-    best_score = max(scores.values())
-
-    return best_major, best_score
-
-# =====================================================
 # UPDATE STATE
 # =====================================================
 
 def update_state(agent, best_score):
 
     current_state = agent["state"]
+
+    if current_state in [
+        "Cocok Jurusan",
+        "Salah Jurusan"
+    ]:
+
+        return agent
 
     if current_state == "Belum Memilih":
 
@@ -284,7 +276,10 @@ def update_state(agent, best_score):
 
             agent["state"] = "Konsultasi"
 
-        elif random.random() < 0.7:
+        elif (
+            agent["motivation"] > 0.5 and
+            random.random() < 0.7
+        ):
 
             agent["state"] = "Memutuskan"
 
@@ -306,7 +301,7 @@ def update_state(agent, best_score):
 
             agent["state"] = "Cocok Jurusan"
 
-        elif random.random() < 0.5:
+        else:
 
             agent["state"] = "Salah Jurusan"
 
@@ -374,12 +369,22 @@ df_simulation = pd.DataFrame(
 )
 
 # =====================================================
-# STATUS AGENT
+# FINAL STATE
+# =====================================================
+
+latest_states = df_simulation.sort_values(
+    "iteration"
+).groupby(
+    "agent_id"
+).tail(1)
+
+state_counts = latest_states["state"].value_counts()
+
+# =====================================================
+# STATUS
 # =====================================================
 
 st.subheader("🧠 Status Agent")
-
-state_counts = df_simulation["state"].value_counts()
 
 col1, col2, col3 = st.columns(3)
 
@@ -423,12 +428,12 @@ with col3:
 # PIE CHART
 # =====================================================
 
-st.subheader("🥧 Persentase State Agent")
+st.subheader("🥧 Persentase Final State")
 
 fig1, ax1 = plt.subplots(figsize=(7,7))
 
 ax1.pie(
-    state_counts,
+    state_counts.values,
     labels=state_counts.index,
     autopct='%1.1f%%'
 )
@@ -436,7 +441,24 @@ ax1.pie(
 st.pyplot(fig1)
 
 # =====================================================
-# COUNT MAJOR
+# FINAL TABLE
+# =====================================================
+
+st.subheader("📋 Final State Agent")
+
+st.dataframe(
+    latest_states[
+        [
+            "agent_id",
+            "state",
+            "selected_major",
+            "score"
+        ]
+    ]
+)
+
+# =====================================================
+# DISTRIBUSI JURUSAN
 # =====================================================
 
 st.subheader("📊 Distribusi Jurusan")
@@ -470,7 +492,7 @@ ax3.plot(trend)
 st.pyplot(fig3)
 
 # =====================================================
-# DOWNLOAD
+# DOWNLOAD CSV
 # =====================================================
 
 csv = df_simulation.to_csv(index=False)
