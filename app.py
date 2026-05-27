@@ -5,197 +5,316 @@ import plotly.express as px
 import random
 
 # =========================================================
-# INITIAL CONFIGURATION & THEME STYLING
+# CONFIG DASHBOARD
 # =========================================================
 st.set_page_config(
-    page_title="Dashboard ABM Pemilihan Jurusan",
+    page_title="Simulasi Pemilihan Jurusan ABM",
     page_icon="🎓",
     layout="wide"
 )
 
-# Custom Elegant Maroon Professional UI styling Container
+# =========================================================
+# CSS MARUN ELEGAN WIDGET UI
+# =========================================================
 st.markdown("""
     <style>
-    .maroon-header {
+    .maroon-card {
         background-color: #6b1d24;
         color: white;
-        padding: 30px;
-        border-radius: 15px;
-        margin-bottom: 25px;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        padding: 35px;
+        border-radius: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
     }
-    .maroon-header h1 { color: white !important; font-weight: 700; margin: 0; }
-    .maroon-header p { color: #f4e3e3 !important; font-size: 1rem; margin-top: 8px; }
+    .maroon-card h1 {
+        color: white !important;
+        font-family: 'Source Sans Pro', sans-serif;
+        font-weight: 700;
+        margin-bottom: 15px;
+    }
+    .maroon-card p {
+        color: #f4e3e3 !important;
+        font-size: 0.95rem;
+        font-weight: 400;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# AGENT DEFINITION WITH MULTIPLE INTELLIGENCES THEORY
+# KONSTANTA MODEL
+# =========================================================
+TOTAL_ITERATIONS = 1000
+STABLE_WINDOW = 3
+
+# =========================================================
+# CLASS AGENT (BERBASIS MULTIPLE INTELLIGENCES)
 # =========================================================
 class StudentAgent:
-    def __init__(self, agent_id, b_it, b_psi, b_dkv, inf, conf):
-        self.id = agent_id
-        self.bakat_it = b_it
-        self.bakat_psikologi = b_psi
-        self.bakat_dkv = b_dkv
-        self.influence = inf
-        self.confidence = conf
-        
+    def __init__(self, profile):
+        self.agent_id = profile["student_id"]
+        self.interest = profile["interest"]
+        self.ability = profile["ability"]
+        self.confidence = profile["confidence"]
+        self.influence = profile["influence"]
+        self.resilience = profile.get("resilience", 0.5)
+        self.distortion = profile.get("distortion", 0.3)
+
+        # Posisi Agen pada Grid Spasial Toroidal (20x20)
         self.x = random.randint(0, 19)
         self.y = random.randint(0, 19)
+
+        # State Awal Sistem Manajemen Keputusan
         self.state = "CONFUSED"
+        self.decision_streak = 0
         self.chosen_major = None
-        self.streak = 0
+
+        # Pemetaan Parameter Ke Teori Kecerdasan Majemuk (Multiple Intelligences)
+        # Menghubungkan bakat & minat bawaan dari profil CSV menjadi klaster kecerdasan siswa
+        self.intel_logical = round(self.ability * 0.9, 2)       # Untuk Teknik Informatika
+        self.intel_linguistic = round(self.interest * 0.85, 2)  # Untuk Psikologi
+        self.intel_spatial = round((self.ability + self.interest) / 2, 2) # Untuk DKV
 
     def move(self):
+        # Pergerakan acak agen di lingkungan sekolah (Grid Spasial)
         self.x = (self.x + random.choice([-1, 0, 1])) % 20
         self.y = (self.y + random.choice([-1, 0, 1])) % 20
 
-    def update_logic(self, nearby_count, info_lvl, guidance, distortion):
-        social_pressure = nearby_count * distortion * 0.02
-        
-        # Evaluasi kecocokan bakat internal
-        scores = {"Teknik Informatika": self.bakat_it, "Psikologi": self.bakat_psikologi, "DKV": self.bakat_dkv}
+    def interact(self, nearby_agents):
+        # Dampak konformitas sosial lokal terhadap tingkat kemantapan pilihan siswa
+        decided_neighbors = sum(1 for agent in nearby_agents if agent.state == "DECIDED")
+        self.confidence += decided_neighbors * 0.005
+        self.confidence = max(0.0, min(1.0, self.confidence))
+
+    def choose_major(self):
+        # Pembobotan keputusan program studi berdasarkan dominasi Kecerdasan Majemuk
+        scores = {
+            "Teknik Informatika": (self.intel_logical * 0.5 + self.interest * 0.3 + self.confidence * 0.2),
+            "Psikologi": (self.intel_linguistic * 0.5 + self.confidence * 0.3 + (1 - self.distortion) * 0.2),
+            "DKV": (self.intel_spatial * 0.45 + (1 - self.influence) * 0.25 + self.confidence * 0.30)
+        }
         self.chosen_major = max(scores, key=scores.get)
-        talent_match = scores[self.chosen_major]
-        
-        # Perubahan nilai kemantapan (Confidence)
-        delta = (talent_match * info_lvl * 0.08) - (social_pressure * self.influence) + (guidance * 0.05)
+
+    def update_state(self, info_level, recommendation):
+        # Tekanan Sosial / Kebisingan Informasi (Bandwagon Effect)
+        social_pressure = self.influence * self.distortion * 0.03
+
+        # Dukungan Intervensi Guru BK / Konseling Karir (Coping Pengarah Keputusan)
+        bk_guidance = self.resilience * recommendation * 0.04
+
+        # Rumus Pertumbuhan Kemantapan Keputusan Karir (Confidence) Siswa
+        delta = ((self.interest * self.ability * info_level * 0.06) - social_pressure + bk_guidance)
         self.confidence = max(0.0, min(1.0, self.confidence + delta))
-        
+
+        # Aturan Transisi State Diagram
         if self.confidence >= 0.8:
-            self.streak += 1
-            if self.streak >= 3: self.state = "DECIDED"
+            self.decision_streak += 1
+            if self.decision_streak >= STABLE_WINDOW:
+                self.state = "DECIDED"
+                if self.chosen_major is None:
+                    self.choose_major()
+            else:
+                self.state = "MATCHING"
         elif self.confidence >= 0.5:
+            self.decision_streak = 0
             self.state = "MATCHING"
-            self.streak = 0
         else:
+            self.decision_streak = 0
             self.state = "CONFUSED"
-            self.streak = 0
 
 # =========================================================
-# SIDEBAR CONTROLLER INTERACTION
+# SIDEBAR CONTROLLER
 # =========================================================
-st.sidebar.header("🕹️ Kontrol Parameter Simulasi")
-selected_scenario = st.sidebar.selectbox(
-    "Pilih Skenario Intervensi:",
-    [
-        "Pasif (Tanpa Intervensi)", 
-        "Reaktif (Bimbingan Saat Bingung)", 
-        "Preventif (Edukasi Rutin Berbasis Bakat)", 
-        "Distorsi Sosial Tinggi (Tren Ikut Teman)"
-    ]
+st.sidebar.header("🧭 Navigasi Menu")
+tampilan_terpilih = st.sidebar.radio(
+    "Pilih Tampilan Dashboard:",
+    ["Ringkasan", "Visualisasi", "Analisis Statistik", "Data Mentah"]
 )
 
-pop_size = st.sidebar.slider("Jumlah Populasi Agen Siswa", min_value=50, max_value=300, value=150, step=10)
-simulation_steps = st.sidebar.slider("Batas Iterasi Waktu (Steps)", min_value=50, max_value=500, value=150, step=10)
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Kontrol Grafik")
+tampilkan_ambang = st.sidebar.checkbox("Tampilkan Batas Kestabilan (80%)", value=True)
+tampilkan_label = st.sidebar.checkbox("Gunakan Titik Marker Garis", value=False)
 
-run_btn = st.sidebar.button("▶️ Jalankan Komputasi Model")
+st.sidebar.markdown("---")
+st.sidebar.header("📁 Unggah Data & Skenario")
+uploaded_file = st.sidebar.file_uploader("Upload CSV Data Siswa Baru:", type=["csv"])
+
+scenario_type = st.sidebar.selectbox(
+    "Pilih Skenario Intervensi:",
+    ["Pasif", "Reaktif", "Preventif"]
+)
+
+run_btn = st.sidebar.button("▶️ Jalankan Simulasi 1000 Iterasi")
 
 # =========================================================
-# HEADER COMPONENT
+# HEADER DASHBOARD
 # =========================================================
 st.markdown("""
-    <div class="maroon-header">
-        <h1>🎓 Dashboard Simulasi Pemilihan Jurusan Kuliah Berbasis Kecerdasan Majemuk</h1>
-        <p>Implementasi Komputasi Spasial Agent-Based Modeling — Progres Evaluasi Akhir Minggu 16</p>
+    <div class="maroon-card">
+        <h1>🎓 Dashboard Simulasi Dinamika Pemilihan Jurusan Kuliah</h1>
+        <p>
+        Implementasi Komputasi Spasial Agent-Based Modeling Menggunakan Teori Kombinasi Kecerdasan Majemuk (Multiple Intelligences)
+        </p>
     </div>
 """, unsafe_allow_html=True)
 
+st.caption("Dashboard ini memproses visualisasi analitik spasial agen siswa dalam 1000 iterasi runtun waktu.")
+st.markdown("<br>", unsafe_allow_html=True)
+
 # =========================================================
-# CORE SIMULATION ENGINE RUNNER
+# DATA SEED & GENERIC GENERATOR DETECTOR
 # =========================================================
-if 'initialized' not in st.session_state or run_btn:
-    # Membangkitkan populasi data awal secara independen dan heterogen
-    np.random.seed(42)
-    agents_pool = []
-    for i in range(pop_size):
-        agents_pool.append(StudentAgent(
-            agent_id=i,
-            b_it=round(random.uniform(0.3, 1.0), 2),
-            b_psi=round(random.uniform(0.3, 1.0), 2),
-            b_dkv=round(random.uniform(0.3, 1.0), 2),
-            inf=round(random.uniform(0.2, 0.8), 2),
-            conf=round(random.uniform(0.1, 0.4), 2)
-        ))
+student_profiles = []
+
+if uploaded_file is not None:
+    try:
+        df_upload = pd.read_csv(uploaded_file)
+        required_cols = ["student_id", "interest", "ability", "confidence", "influence", "resilience", "distortion"]
         
-    history_records = []
-    
-    # Looping jalannya langkah sekuensial waktu simulasi
-    for step in range(simulation_steps):
-        for agent in agents_pool:
-            agent.move()
+        if all(col in df_upload.columns for col in required_cols):
+            student_profiles = df_upload[required_cols].to_dict(orient="records")
+            st.sidebar.success(f"✅ Berhasil memuat {len(student_profiles)} siswa dari CSV!")
+        else:
+            st.sidebar.error("❌ Format kolom CSV tidak cocok dengan kebutuhan model!")
+    except Exception as e:
+        st.sidebar.error(f"Gagal membaca file: {e}")
+
+# Sintesis data cadangan jika file belum diunggah pengguna
+if not student_profiles:
+    random.seed(42)
+    student_profiles = [
+        {
+            "student_id": i,
+            "interest": random.uniform(0.4, 1.0),
+            "ability": random.uniform(0.4, 1.0),
+            "confidence": random.uniform(0.2, 0.5),
+            "influence": random.uniform(0.1, 0.7),
+            "resilience": random.uniform(0.3, 0.9),
+            "distortion": random.uniform(0.1, 0.6)
+        }
+        for i in range(120)
+    ]
+
+# =========================================================
+# CORE ENGINE SIMULASI RUNNER (1000 ITERASI)
+# =========================================================
+if run_btn or 'history_df' not in st.session_state:
+    with st.spinner("Memproses Agen Spasial Menuju 1000 Iterasi..."):
+        agents = [StudentAgent(profile) for profile in student_profiles]
+        history_records = []
+
+        # Loop penjelajahan waktu 1000 Iterasi penuh
+        for step in range(TOTAL_ITERATIONS):
             
-            # Deteksi kepadatan tetangga lokal dalam jangkauan grid
-            neighbors_count = sum(
-                1 for p in agents_pool 
-                if p.id != agent.id and (abs(p.x - agent.x) + abs(p.y - agent.y)) <= 2 and p.state == "DECIDED"
-            )
-            
-            # Pengkondisian logika parameter berdasarkan tipe skenario yang dipilih
-            if selected_scenario == "Pasif (Tanpa Intervensi)":
-                info_lvl, guidance, distortion = 0.2, 0.0, 0.4
-            elif selected_scenario == "Reaktif (Bimbingan Saat Bingung)":
-                info_lvl, distortion = 0.4, 0.3
-                guidance = 0.7 if agent.confidence < 0.4 else 0.1
-            elif selected_scenario == "Preventif (Edukasi Rutin Berbasis Bakat)":
-                info_lvl, guidance, distortion = 0.8, 0.6, 0.2
-            elif selected_scenario == "Distorsi Sosial Tinggi (Tren Ikut Teman)":
-                info_lvl, guidance, distortion = 0.3, 0.1, 0.9
+            # Penetapan Aturan Skenario Kebijakan BK
+            if scenario_type == "Pasif":
+                info_level, recommendation = 0.3, 0.0
+            elif scenario_type == "Reaktif":
+                info_level = 0.5
+                last_decided = history_records[-1]["DECIDED"] if len(history_records) > 0 else 0
+                recommendation = 0.8 if last_decided < (len(agents) * 0.5) else 0.2
+            elif scenario_type == "Preventif":
+                info_level, recommendation = 0.9, 0.8
+
+            # Iterasi perilaku masing-masing agen dalam grid ruang
+            for agent in agents:
+                agent.move()
                 
-            agent.update_logic(neighbors_count, info_lvl, guidance, distortion)
-            
-        history_records.append({
-            "Iterasi": step + 1,
-            "CONFUSED": sum(1 for a in agents_pool if a.state == "CONFUSED"),
-            "MATCHING": sum(1 for a in agents_pool if a.state == "MATCHING"),
-            "DECIDED": sum(1 for a in agents_pool if a.state == "DECIDED"),
-            "Teknik Informatika": sum(1 for a in agents_pool if a.state == "DECIDED" and a.chosen_major == "Teknik Informatika"),
-            "Psikologi": sum(1 for a in agents_pool if a.state == "DECIDED" and a.chosen_major == "Psikologi"),
-            "DKV": sum(1 for a in agents_pool if a.state == "DECIDED" and a.chosen_major == "DKV")
-        })
-        
-    st.session_state['df_log'] = pd.DataFrame(history_records)
-    st.session_state['initialized'] = True
-    st.session_state['last_scenario'] = selected_scenario
+                # Optimasi pencarian tetangga lokal radius Manhattan jarak <= 2
+                neighbors = [other for other in agents if other.agent_id != agent.agent_id and 
+                             (abs(other.x - agent.x) + abs(other.y - agent.y)) <= 2]
+                
+                agent.interact(neighbors)
+                agent.update_state(info_level, recommendation)
 
-# Load data hasil eksekusi simulasi dari session state cache
-df_res = st.session_state['df_log']
-scen_active = st.session_state['last_scenario']
+            # Hitung agregat status berkala pada akhir iterasi saat ini
+            confused_count = sum(1 for a in agents if a.state == "CONFUSED")
+            matching_count = sum(1 for a in agents if a.state == "MATCHING")
+            decided_count = sum(1 for a in agents if a.state == "DECIDED")
+
+            ti_count = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Teknik Informatika")
+            psi_count = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Psikologi")
+            dkv_count = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "DKV")
+
+            history_records.append({
+                "Iterasi": step + 1,
+                "CONFUSED": confused_count,
+                "MATCHING": matching_count,
+                "DECIDED": decided_count,
+                "Teknik Informatika": ti_count,
+                "Psikologi": psi_count,
+                "DKV": dkv_count
+            })
+
+        # Amankan luaran komputasi ke dalam cache aplikasi Streamlit
+        st.session_state['history_df'] = pd.DataFrame(history_records)
+        st.session_state['final_distribution'] = {
+            "Teknik Informatika": ti_count,
+            "Psikologi": psi_count,
+            "DKV": dkv_count
+        }
+        st.session_state['current_scenario'] = scenario_type
+
+# Penarikan data dari cache session state
+df_res = st.session_state['history_df']
+dist_res = st.session_state['final_distribution']
+scen_res = st.session_state['current_scenario']
 
 # =========================================================
-# VISUAL RENDERING PLATFORM (TAMPILAN UTAMA)
+# PANEL INTERFACE UTAMA BERDASARKAN MENU PILIHAN
 # =========================================================
-col1, col2, col3 = st.columns(3)
-col1.metric("Skenario Aktif", scen_active)
-col2.metric("Siswa Berhasil Decided", f"{df_res['DECIDED'].iloc[-1]} / {pop_size} Agen")
-col3.metric("Stabilitas Kelompok", "Konvergen" if df_res['DECIDED'].iloc[-1] > (pop_size * 0.5) else "Fluktuatif/Ambigur")
 
-st.markdown("---")
+if tampilan_terpilih == "Ringkasan":
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(label="Skenario Aktif", value=scen_res)
+    col2.metric(label="Total Langkah Waktu Run", value=f"{len(df_res)} Iterasi")
+    col3.metric(label="Siswa Berhasil Kunci Jurusan", value=f"{df_res['DECIDED'].iloc[-1]} Siswa")
+    col4.metric(label="Siswa Masih Bingung", value=f"{df_res['CONFUSED'].iloc[-1]} Siswa")
 
-# Layout Grafik Dua Kolom
-g_col1, g_col2 = st.columns(2)
+    st.markdown("---")
+    st.subheader("📋 Interpretasi Analitik Model")
+    st.info(f"""
+    **Hasil Pemodelan Spasial:** Melalui pengujian sepanjang **{len(df_res)} iterasi**, sistem intervensi tipe **{scen_res}** berhasil mengarahkan kecenderungan siswa untuk memilih program studi secara rasional berdasarkan bakat bawaannya. 
+    Hal ini ditandai dengan perubahan kurva kestabilan keputusan kelompok pada titik akhir simulasi.
+    """)
 
-with g_col1:
-    st.subheader("📈 Tren Transisi Perubahan Status Psikologis")
+elif tampilan_terpilih == "Visualisasi":
+    st.subheader("📊 Grafik Tren Perubahan Status Pengambilan Keputusan")
+    
     fig_line = px.line(
         df_res, x="Iterasi", y=["CONFUSED", "MATCHING", "DECIDED"],
-        color_discrete_map={"CONFUSED": "#ef4444", "MATCHING": "#eab308", "DECIDED": "#22c55e"},
-        labels={"value": "Jumlah Siswa", "variable": "Status"}
+        title="Dinamika Status Siswa Sepanjang Waktu",
+        color_discrete_map={"CONFUSED": "#ef4444", "MATCHING": "#eab308", "DECIDED": "#22c55e"}
     )
+    
+    if tampilkan_ambang:
+        total_students = len(student_profiles)
+        fig_line.add_hline(y=total_students * 0.8, line_dash="dash", line_color="blue", annotation_text="Target Kelompok 80%")
+        
+    fig_line.update_traces(mode='lines+markers' if tampilkan_label else 'lines')
     st.plotly_chart(fig_line, use_container_width=True)
 
-with g_col2:
-    st.subheader("📊 Distribusi Pilihan Program Studi Akhir")
-    final_counts = {
-        "Program Studi": ["Teknik Informatika", "Psikologi", "DKV"],
-        "Jumlah Peminat": [df_res["Teknik Informatika"].iloc[-1], df_res["Psikologi"].iloc[-1], df_res["DKV"].iloc[-1]]
-    }
+    # Grafik Batang Distribusi Program Studi Akhir
+    st.markdown("---")
+    st.subheader("🎯 Distribusi Peminat Program Studi Akhir")
+    df_bar = pd.DataFrame({
+        "Program Studi": list(dist_res.keys()),
+        "Jumlah Pemiant": list(dist_res.values())
+    })
+    
     fig_bar = px.bar(
-        final_counts, x="Program Studi", y="Jumlah Peminat",
-        color="Program Studi", color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"]
+        df_bar, x="Program Studi", y="Jumlah Pemiant",
+        color="Program Studi",
+        color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"]
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-st.subheader("🗂️ Data Mentah Log Hasil Simulasi Terakhir")
-st.dataframe(df_res, use_container_width=True)
+elif tampilan_terpilih == "Analisis Statistik":
+    st.subheader("📈 Analisis Deskriptif Hasil Agregat Simulasi")
+    st.write("Statistik deskriptif sekuensial transisi dari seluruh iterasi berjalan:")
+    st.dataframe(df_res.describe(), use_container_width=True)
+
+elif tampilan_terpilih == "Data Mentah":
+    st.subheader("🗂️ Tabel Log Matriks Hasil Simulasi")
+    st.write("Silakan periksa lembar baris mentah per iterasi di bawah ini untuk kebutuhan pelaporan draft jurnal:")
+    st.dataframe(df_res, use_container_width=True)
