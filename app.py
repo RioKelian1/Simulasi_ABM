@@ -335,25 +335,46 @@ simulation_history = []
 
 progress_bar = st.progress(0)
 
+# gunakan dataframe copy
+simulation_agents = df_agents.copy()
+
 for iteration in range(iterations):
 
-    for _, row in df_agents.iterrows():
+    for idx, row in simulation_agents.iterrows():
 
+        # ambil agent saat ini
         agent = row.to_dict()
 
+        # intervention
         updated_agent = intervention(
             agent,
             scenario
         )
 
+        # pilih jurusan
         major, best_score = choose_major(
             updated_agent
         )
 
+        # update state
         updated_agent = update_state(
             updated_agent,
             best_score
         )
+
+        # =========================================
+        # SIMPAN PERUBAHAN STATE KE DATAFRAME
+        # =========================================
+
+        simulation_agents.at[idx, "state"] = updated_agent["state"]
+
+        simulation_agents.at[idx, "confidence"] = updated_agent["confidence"]
+
+        simulation_agents.at[idx, "pressure_parent"] = updated_agent["pressure_parent"]
+
+        # =========================================
+        # SAVE HISTORY
+        # =========================================
 
         simulation_history.append({
 
@@ -378,6 +399,7 @@ for iteration in range(iterations):
         (iteration + 1) / iterations
     )
 
+# hasil akhir
 df_simulation = pd.DataFrame(
     simulation_history
 )
