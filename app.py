@@ -14,7 +14,7 @@ st.markdown("**Faktor: Interest, Skill, Nilai, Pengaruh Teman** | 3 Skenario: Pa
 
 # ========== PARAMETER TETAP (tidak ditampilkan ke user) ==========
 NUM_AGENTS = 200
-NUM_STEPS = 4          # internal, tidak disebut
+NUM_STEPS = 7          # internal, tidak disebut
 MONTE_CARLO_ITER = 1000
 JURUSAN = ["Teknik Informatika", "Manajemen", "Psikologi"]
 
