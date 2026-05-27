@@ -189,6 +189,6 @@ if tampilan_terpilih == "Ringkasan":
 
     st.markdown("---")
     st.subheader("📋 Ringkasan Analisis Struktur Keputusan Kasus")
-    st.write(f"""
-    Berdasarkan hasil komputasi berbasis agen (ABM) sebanyak **{len(df_res)} iterasi**, 
-    skenario intervensi menggunakan **{scen_res}** terbukti secara statistik paling
+    st.write(
+        f"Berdasarkan hasil komputasi berbasis agen (ABM) sebanyak **{len(df_res)} iterasi**, "
+        f"skenario intervensi menggunakan **{scen_res}** terbukti secara statistik
