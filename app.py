@@ -204,7 +204,10 @@ elif tampilan_terpilih == "Visualisasi":
         fig_line.add_hline(y=len(student_profiles)*0.8, line_dash="dash", line_color="blue", annotation_text="Target Mantap Komunitas (80%)")
         
     if tampilkan_label:
-        fig_line.update_traces(mode='lines+markers', marker=dict(size=3), markevery=100)
+        # KOREKSI: Menghapus markevery agar tidak ValueError, mengecilkan size ke 2 agar pas di 1000 iterasi
+        fig_line.update_traces(mode='lines+markers', marker=dict(size=2))
+    else:
+        fig_line.update_traces(mode='lines')
         
     st.plotly_chart(fig_line, use_container_width=True)
     
@@ -218,13 +221,3 @@ elif tampilan_terpilih == "Visualisasi":
         color="Program Studi", color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"]
     )
     st.plotly_chart(fig_bar, use_container_width=True)
-
-elif tampilan_terpilih == "Analisis Statistik":
-    st.subheader("📈 Deskripsi Analisis Statistik Variabel Utama")
-    stats_df = df_res[["CONFUSED", "MATCHING", "DECIDED"]].describe().T
-    st.dataframe(stats_df, use_container_width=True)
-
-elif tampilan_terpilih == "Data Mentah":
-    st.subheader("📄 Basis Data Log Hasil Iterasi Spasial")
-    st.markdown("Berikut adalah data mentah log dari iterasi ke-1 hingga iterasi ke-1000:")
-    st.dataframe(df_res, use_container_width=True)
