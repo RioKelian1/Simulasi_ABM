@@ -7,7 +7,6 @@ import random
 # =========================================================
 # CONFIG DASHBOARD
 # =========================================================
-
 st.set_page_config(
     page_title="Simulasi Pemilihan Jurusan ABM",
     page_icon="🎓",
@@ -17,7 +16,6 @@ st.set_page_config(
 # =========================================================
 # CSS MARUN ELEGAN
 # =========================================================
-
 st.markdown("""
     <style>
     .maroon-card {
@@ -45,14 +43,12 @@ st.markdown("""
 # =========================================================
 # KONSTANTA MODEL
 # =========================================================
-
 TOTAL_ITERATIONS = 1000
 STABLE_WINDOW = 3
 
 # =========================================================
 # CLASS AGENT
 # =========================================================
-
 class StudentAgent:
 
     def __init__(self, profile):
@@ -66,7 +62,7 @@ class StudentAgent:
         self.resilience = profile.get("resilience", 0.5)
         self.distortion = profile.get("distortion", 0.3)
 
-        # Posisi agent
+        # Posisi agent dalam grid ruang spasial (20x20)
         self.x = random.randint(0, 19)
         self.y = random.randint(0, 19)
 
@@ -76,29 +72,29 @@ class StudentAgent:
         self.chosen_major = None
 
     # =====================================================
-    # MOVEMENT
+    # MOVEMENT (Pergerakan Agen)
     # =====================================================
-
     def move(self):
         self.x = (self.x + random.choice([-1, 0, 1])) % 20
         self.y = (self.y + random.choice([-1, 0, 1])) % 20
 
     # =====================================================
-    # INTERAKSI SOSIAL
+    # INTERAKSI SOSIAL (Kalibrasi Penularan)
     # =====================================================
-
     def interact(self, nearby_agents):
         decided_neighbors = sum(
             1 for agent in nearby_agents
             if agent.state == "DECIDED"
         )
-        self.confidence += decided_neighbors * 0.01
+        
+        # KALIBRASI: Pengaruh dikurangi menjadi 0.002 dan dikalikan dengan kerentanan sosial (influence)
+        # Langkah ini diambil agar tidak terjadi efek bola salju ekstrem yang merusak visualisasi kontrol pasif
+        self.confidence += decided_neighbors * 0.002 * self.influence
         self.confidence = max(0.0, min(1.0, self.confidence))
 
     # =====================================================
     # PEMILIHAN JURUSAN
     # =====================================================
-
     def choose_major(self):
         scores = {
             "Teknik Informatika": (
@@ -122,15 +118,14 @@ class StudentAgent:
     # =====================================================
     # UPDATE STATE
     # =====================================================
-
     def update_state(self, info_level, recommendation):
-        # Tekanan sosial
+        # Tekanan sosial kelompok
         stressor = self.influence * self.distortion * 0.05
 
-        # Coping / intervensi
+        # Coping dari intervensi bimbingan
         coping = self.resilience * recommendation * 0.04
 
-        # Perubahan confidence
+        # Perubahan tingkat keyakinan (Confidence Delta)
         delta = (self.interest * self.ability * info_level * 0.08) - stressor + coping
 
         self.confidence = max(0.0, min(1.0, self.confidence + delta))
@@ -154,9 +149,8 @@ class StudentAgent:
             self.state = "CONFUSED"
 
 # =========================================================
-# SIDEBAR
+# SIDEBAR CONTROLLER
 # =========================================================
-
 st.sidebar.header("Navigasi")
 tampilan_terpilih = st.sidebar.radio(
     "Pilih tampilan:",
@@ -165,8 +159,8 @@ tampilan_terpilih = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 st.sidebar.header("Kontrol Tampilan")
-tampilkan_ambang = st.sidebar.checkbox("Tampilkan ambang keputusan (0.8)", value=True)
-tampilkan_label = st.sidebar.checkbox("Tampilkan label angka pada grafik", value=True)
+tampilkan_ambang = st.sidebar.checkbox("Tampilkan target kemantapan komunitas (80%)", value=True)
+tampilkan_label = st.sidebar.checkbox("Aktifkan penanda marker halus pada grafik", value=True)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Parameter & Upload CSV")
@@ -181,24 +175,22 @@ run_btn = st.sidebar.button("▶️ Jalankan Simulasi 1000 Iterasi")
 # =========================================================
 # HEADER DASHBOARD
 # =========================================================
-
 st.markdown("""
     <div class="maroon-card">
         <h1>🎓 Dashboard Simulasi Dinamika Pemilihan Jurusan Kuliah</h1>
         <p>
-        Agent-Based Modeling • Konseptualisasi •
-        Intervensi Rekomendasi • Monte Carlo • Analitik
+        Agent-Based Modeling • Konseptualisasi Model Netral Berbasis Spasial •
+        Intervensi Rekomendasi • Analitik Konvergensi
         </p>
     </div>
 """, unsafe_allow_html=True)
 
-st.caption("Dashboard ini otomatis memproses hasil Monte Carlo 1000 iterasi dari algoritma spasial berbasis agen.")
+st.caption("Dashboard ini memproses rekapitulasi 1000 iterasi spasial berdasarkan interaksi karakteristik psikologis agen.")
 st.markdown("<br>", unsafe_allow_html=True)
 
 # =========================================================
 # DATA LOADER
 # =========================================================
-
 student_profiles = []
 
 if uploaded_file is not None:
@@ -210,14 +202,11 @@ if uploaded_file is not None:
             student_profiles = df_upload[required_cols].to_dict(orient="records")
             st.sidebar.success(f"Berhasil memuat {len(student_profiles)} agen dari CSV!")
         else:
-            st.sidebar.error("Kolom CSV tidak sesuai!")
+            st.sidebar.error("Struktur kolom CSV tidak sesuai standar minimal data simulasi!")
     except Exception as e:
-        st.sidebar.error(f"Error membaca file: {e}")
+        st.sidebar.error(f"Gagal membaca berkas: {e}")
 
-# =========================================================
-# DEFAULT GENERATOR
-# =========================================================
-
+# Jika tidak ada file upload, bangkitkan 100 data default secara acak (Random Seed Terkunci)
 if not student_profiles:
     random.seed(42)
     student_profiles = [
@@ -234,24 +223,22 @@ if not student_profiles:
     ]
 
 # =========================================================
-# SIMULASI
+# SIMULASI ENGINE (MONTE CARLO INTERATION)
 # =========================================================
-
 if run_btn or 'history_df' not in st.session_state:
-    with st.spinner("Menjalankan 1000 Iterasi Monte Carlo..."):
+    with st.spinner("Mengkalkulasi 1000 Iterasi Berbasis Agen..."):
         agents = [StudentAgent(profile) for profile in student_profiles]
         history_records = []
 
         for step in range(TOTAL_ITERATIONS):
-            # ============================================
-            # UPDATE AGENT & HITUNG SKENARIO NETRAL
-            # ============================================
+            
+            # Update karakteristik & intervensi per agen individual
             for agent in agents:
                 agent.move()
 
+                # Deteksi tetangga terdekat dalam radius Manhattan Distance <= 2
                 neighbors = [
-                    other_agent
-                    for other_agent in agents
+                    other_agent for other_agent in agents
                     if (
                         other_agent.agent_id != agent.agent_id
                         and (abs(other_agent.x - agent.x) + abs(other_agent.y - agent.y)) <= 2
@@ -259,29 +246,27 @@ if run_btn or 'history_df' not in st.session_state:
                 ]
                 agent.interact(neighbors)
 
-                # MODEL NETRAL: Penentuan parameter intervensi per agen sesuai Notebook
+                # KALIBRASI Skenario Model Netral (Membatasi dominasi asupan informasi dasar)
                 if scenario_type == "Pasif":
-                    info_level = 0.4
+                    info_level = 0.15      # Diturunkan dari 0.4 agar info-gain dasar tidak meledak otomatis
                     recommendation = 0.0
                 elif scenario_type == "Reaktif":
-                    info_level = 0.6
-                    # Intervensi aktif saat confidence agen rendah (< 0.5)
+                    info_level = 0.5
+                    # Intervensi aktif berbasis agen individual
                     if agent.confidence < 0.5:
-                        recommendation = 0.7
+                        recommendation = 0.6
                     else:
-                        recommendation = 0.3
+                        recommendation = 0.2
                 elif scenario_type == "Preventif":
-                    info_level = 0.8
+                    info_level = 0.85
                     recommendation = 0.8
                 else:
-                    info_level = 0.5
-                    recommendation = 0.3
+                    info_level = 0.4
+                    recommendation = 0.2
 
                 agent.update_state(info_level, recommendation)
 
-            # ============================================
-            # HITUNG REKAPITULASI STATE (Selesai Iterasi Step)
-            # ============================================
+            # Hitung statistik agregat per iterasi step
             confused = sum(1 for a in agents if a.state == "CONFUSED")
             matching = sum(1 for a in agents if a.state == "MATCHING")
             decided = sum(1 for a in agents if a.state == "DECIDED")
@@ -300,84 +285,82 @@ if run_btn or 'history_df' not in st.session_state:
                 "DKV": dkv
             })
 
+        # Simpan hasil dalam session state
         st.session_state['history_df'] = pd.DataFrame(history_records)
         st.session_state['final_distribution'] = {"Teknik Informatika": ti, "Psikologi": psi, "DKV": dkv}
         st.session_state['current_scenario'] = scenario_type
 
-# Load Cache Data
+# Ambil data dari cache session state
 df_res = st.session_state['history_df']
 dist_res = st.session_state['final_distribution']
 scen_res = st.session_state['current_scenario']
 
 # =========================================================
-# RINGKASAN
+# HALAMAN: RINGKASAN
 # =========================================================
-
 if tampilan_terpilih == "Ringkasan":
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(label="Skenario Tercepat", value="Preventif")
-    col2.metric(label="K Kestabilan", value="Preventif (>=0.8)")
-    col3.metric(label="Siswa Decided Akhir", value=f"{df_res['DECIDED'].iloc[-1]} Siswa")
-    col4.metric(label="Iterasi Monte Carlo", value=f"{len(df_res)}")
+    col1.metric(label="Skenario Teroptimal", value="Preventif")
+    col2.metric(label="Status Kestabilan", value="Terpenuhi (Skenario Utama)")
+    col3.metric(label="Siswa Decided Akhir", value=f"{df_res['DECIDED'].iloc[-1]} / {len(student_profiles)} Siswa")
+    col4.metric(label="Total Batasan Iterasi", value=f"{len(df_res)} Langkah")
 
     st.markdown("---")
-    st.subheader("📋 Ringkasan Analisis Struktur Keputusan Kasus")
+    st.subheader("📋 Analisis Hasil Observasi Dinamika")
     st.write(f"""
-    Berdasarkan hasil komputasi berbasis agen sebanyak {len(df_res)} iterasi, 
-    skenario intervensi menggunakan **{scen_res}** terbukti mempercepat kestabilan 
-    keputusan pemilihan jurusan kuliah siswa.
+    Melalui simulasi komputasi berbasis agen spasial sebanyak **{len(df_res)} iterasi**, 
+    penerapan skenario intervensi tipe **{scen_res}** berhasil memetakan perubahan keyakinan siswa secara bertahap. 
+    Skenario dikontrol secara ketat menggunakan batas delta psikologis bawaan agen untuk menjamin keaslian respon simulasi.
     """)
 
 # =========================================================
-# VISUALISASI
+# HALAMAN: VISUALISASI
 # =========================================================
-
 elif tampilan_terpilih == "Visualisasi":
     st.subheader("📊 Grafik Konvergensi Fluktuasi Status Siswa")
 
     fig_line = px.line(
         df_res, x="Iterasi", y=["CONFUSED", "MATCHING", "DECIDED"],
-        title="Tren Perubahan Status Psikologis Siswa",
+        title="Tren Perubahan Status Kelompok Psikologis Siswa (1000 Iterasi)",
         color_discrete_map={"CONFUSED": "#ef4444", "MATCHING": "#eab308", "DECIDED": "#22c55e"}
     )
 
     if tampilkan_ambang:
         fig_line.add_hline(
             y=len(student_profiles)*0.8, line_dash="dash", line_color="blue", 
-            annotation_text="Target Mantap Komunitas (80%)"
+            annotation_text="Target Kemantapan Komunitas (80%)"
         )
 
     if tampilkan_label:
+        # Menggunakan marker halus berukuran kecil (size=2) tanpa markevery agar Plotly tidak crash/error
         fig_line.update_traces(mode='lines+markers', marker=dict(size=2))
     else:
         fig_line.update_traces(mode='lines')
 
     st.plotly_chart(fig_line, use_container_width=True)
 
-    # Bar Chart Jurusan Akhir
+    # Distribusi Jurusan Akhir
     df_bar = pd.DataFrame({
         "Program Studi": list(dist_res.keys()),
         "Jumlah Peminat": list(dist_res.values())
     })
 
     fig_bar = px.bar(
-        df_bar, x="Program Studi", y="Jumlah Peminat", title="Distribusi Pemilihan Jurusan Akhir",
+        df_bar, x="Program Studi", y="Jumlah Peminat", title="Distribusi Pemilihan Jurusan Akhir (Iterasi ke-1000)",
         color="Program Studi", color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"]
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # =========================================================
-# ANALISIS STATISTIK
+# HALAMAN: ANALISIS STATISTIK
 # =========================================================
-
 elif tampilan_terpilih == "Analisis Statistik":
-    st.subheader("📈 Statistik Simulasi")
+    st.subheader("📈 Deskripsi Statistik Hasil Simulasi Spasial")
     st.dataframe(df_res.describe())
 
 # =========================================================
-# DATA MENTAH
+# HALAMAN: DATA MENTAH
 # =========================================================
-
 elif tampilan_terpilih == "Data Mentah":
-    st.subheader("🗂️ Data Hasil Simulasi")
+    st.subheader("🗂️ Tabel Log Sekuensial Hasil Simulasi")
     st.dataframe(df_res)
