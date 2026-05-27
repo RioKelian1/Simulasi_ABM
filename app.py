@@ -14,7 +14,7 @@ st.markdown("**Faktor: Interest, Skill, Nilai, Pengaruh Teman** | 3 Skenario: Pa
 
 # ========== PARAMETER TETAP ==========
 NUM_AGENTS = 200
-NUM_SEMESTERS = 10          # internal, TIDAK DITAMPILKAN
+NUM_SEMESTERS = 10          # internal, tidak ditampilkan
 MONTE_CARLO_ITER = 1000
 JURUSAN = ["Teknik Informatika", "Manajemen", "Psikologi"]
 
@@ -71,7 +71,7 @@ def run_simulation(intervention_type, custom_profiles=None):
             agents.append(Student(i, custom_profiles[i]))
         else:
             agents.append(Student(i))
-    for sem in range(NUM_SEMESTERS):   # internal, tidak direkam ke output
+    for sem in range(NUM_SEMESTERS):
         for ag in agents:
             if ag.state == "Memutuskan":
                 continue
@@ -133,7 +133,7 @@ if st.sidebar.button("🚀 Jalankan Simulasi (1000 iterasi Monte Carlo)"):
         st.session_state['results'] = results
         st.success("Simulasi selesai!")
 
-# ========== DASHBOARD (setelah simulasi selesai) ==========
+# ========== DASHBOARD ==========
 if 'results' in st.session_state:
     res = st.session_state['results']
     
@@ -156,7 +156,6 @@ if 'results' in st.session_state:
         st.header("📋 Ringkasan Hasil Simulasi")
         
         best_scenario = max(res.keys(), key=lambda s: res[s]["state"]["Memutuskan"])
-        # Skenario dengan % belum memilih terendah = yang paling berhasil
         best_choice = min(res.keys(), key=lambda s: res[s]["state"]["Belum Memilih"])
         
         col1, col2, col3 = st.columns(3)
@@ -169,6 +168,37 @@ if 'results' in st.session_state:
         with col3:
             st.metric("🔁 Iterasi Monte Carlo", f"{MONTE_CARLO_ITER}")
         
+        # Tabel Final State Agent untuk masing-masing skenario
+        st.subheader("📋 Tabel Final State Agent per Skenario")
+        tabel_state = pd.DataFrame()
+        for scenario in ["pasif", "reaktif", "preventif"]:
+            for state in ["Belum Memilih", "Eksplorasi", "Memutuskan"]:
+                persen = res[scenario]["state"][state]
+                jumlah = persen * NUM_AGENTS / 100
+                tabel_state = pd.concat([tabel_state, pd.DataFrame({
+                    "Skenario": [scenario.capitalize()],
+                    "State": [state],
+                    "Jumlah Agent": [f"{jumlah:.0f}"],
+                    "Persentase": [f"{persen:.1f}%"]
+                })])
+        st.dataframe(tabel_state, use_container_width=True)
+        
+        # Tabel pilihan jurusan per skenario
+        st.subheader("📋 Tabel Pilihan Jurusan per Skenario")
+        tabel_jurusan = pd.DataFrame()
+        for scenario in ["pasif", "reaktif", "preventif"]:
+            for j in JURUSAN:
+                persen = res[scenario]["choice"][j]
+                jumlah = persen * NUM_AGENTS / 100
+                tabel_jurusan = pd.concat([tabel_jurusan, pd.DataFrame({
+                    "Skenario": [scenario.capitalize()],
+                    "Jurusan": [j],
+                    "Jumlah Agent": [f"{jumlah:.0f}"],
+                    "Persentase": [f"{persen:.1f}%"]
+                })])
+        st.dataframe(tabel_jurusan, use_container_width=True)
+        
+        # Inti temuan
         st.subheader("💡 Inti Temuan")
         st.markdown(f"""
         - **Skenario Preventif** menghasilkan persentase siswa yang berhasil memutuskan jurusan tertinggi ({res['preventif']['state']['Memutuskan']:.1f}%).
@@ -199,7 +229,7 @@ if 'results' in st.session_state:
     elif menu == "Visualisasi":
         st.header("📈 Grafik Analitik")
         
-        # Bar chart perbandingan % memutuskan untuk ketiga skenario
+        # Bar chart perbandingan % memutuskan
         st.subheader("Perbandingan % Agent yang Memutuskan")
         fig1, ax1 = plt.subplots(figsize=(8,6))
         scenarios = list(res.keys())
@@ -258,7 +288,7 @@ if 'results' in st.session_state:
         ax.set_ylabel("Jumlah Agent")
         st.pyplot(fig)
         
-        # Heatmap korelasi pilihan jurusan antar skenario
+        # Heatmap korelasi
         st.subheader("Korelasi Persentase Pilihan Jurusan antar Skenario")
         df_corr = pd.DataFrame({
             "Pasif": [res["pasif"]["choice"][j] for j in JURUSAN],
