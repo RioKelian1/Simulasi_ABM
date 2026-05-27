@@ -68,13 +68,15 @@ class StudentAgent:
         self.confidence = profile["confidence"]
         self.influence = profile["influence"]
 
-        # Tambahan sesuai notebook final
+        # Variabel tambahan
         self.resilience = profile.get("resilience", 0.5)
         self.distortion = profile.get("distortion", 0.3)
 
+        # Posisi agent
         self.x = random.randint(0, 19)
         self.y = random.randint(0, 19)
 
+        # State awal
         self.state = "CONFUSED"
 
         self.decision_streak = 0
@@ -156,14 +158,14 @@ class StudentAgent:
         recommendation
     ):
 
-        # Faktor tekanan
+        # Tekanan sosial
         stressor = (
             self.influence
             * self.distortion
             * 0.05
         )
 
-        # Faktor coping/intervensi
+        # Coping / intervensi
         coping = (
             self.resilience
             * recommendation
@@ -305,8 +307,6 @@ if uploaded_file is not None:
             "ability",
             "confidence",
             "influence",
-
-            # tambahan baru
             "resilience",
             "distortion"
         ]
@@ -384,6 +384,7 @@ if run_btn or 'history_df' not in st.session_state:
         "Menjalankan 1000 Iterasi Monte Carlo..."
     ):
 
+        # PAKAI SEMUA DATA
         agents = [
             StudentAgent(profile)
             for profile in student_profiles
@@ -653,9 +654,9 @@ elif tampilan_terpilih == "Visualisasi":
         use_container_width=True
     )
 
-    # ================================================
+    # =====================================================
     # BAR CHART JURUSAN
-    # ================================================
+    # =====================================================
 
     df_bar = pd.DataFrame({
 
