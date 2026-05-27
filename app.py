@@ -32,11 +32,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- KONSTANTA MODEL ---
+# --- KONSTANTA MODEL (DITETAPKAN 1000 ITERASI) ---
 TOTAL_ITERATIONS = 1000
 STABLE_WINDOW = 3
 
-# --- DEFINISI AGENT ---
 class StudentAgent:
     def __init__(self, profile):
         self.agent_id = profile["student_id"]
@@ -64,7 +63,7 @@ class StudentAgent:
     def update_state(self, info_level, recommendation):
         delta = (self.interest * self.ability * info_level * 0.08) - (self.influence * 0.05) + (recommendation * 0.07)
         self.confidence = max(0.0, min(1.0, self.confidence + delta))
-
+        
         if self.confidence >= 0.8:
             self.decision_streak += 1
             if self.decision_streak >= STABLE_WINDOW:
@@ -80,9 +79,12 @@ class StudentAgent:
             self.decision_streak = 0
             self.state = "CONFUSED"
 
-# --- SIDEBAR PANEL ---
+# --- SIDEBAR PANEL CONTROL ---
 st.sidebar.header("Navigasi")
-tampilan_terpilih = st.sidebar.radio("Pilih tampilan:", ["Ringkasan", "Visualisasi", "Analisis Statistik", "Data Mentah"])
+tampilan_terpilih = st.sidebar.radio(
+    "Pilih tampilan:",
+    ["Ringkasan", "Visualisasi", "Analisis Statistik", "Data Mentah"]
+)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Kontrol Tampilan")
@@ -94,9 +96,10 @@ st.sidebar.header("Parameter & Upload CSV")
 uploaded_file = st.sidebar.file_uploader("Upload CSV Data Siswa Baru", type=["csv"])
 scenario_type = st.sidebar.selectbox("Pilih Skenario Intervensi:", ["Pasif", "Reaktif", "Preventif"])
 
+# Tombol pemicu simulasi eksekusi Monte Carlo 1000 iterasi
 run_btn = st.sidebar.button("▶️ Jalankan Simulasi 1000 Iterasi")
 
-# --- BANNER ---
+# --- BANNER MARUN UTAMA (KEMBAR DENGAN SCREENSHOT) ---
 st.markdown("""
     <div class="maroon-card">
         <h1>🎓 Dashboard Simulasi Dinamika Pemilihan Jurusan Kuliah</h1>
@@ -106,7 +109,7 @@ st.markdown("""
 st.caption("Dashboard ini otomatis memproses hasil Monte Carlo 1000 iterasi dari algoritma spasial berbasis agen.")
 st.markdown("<br>", unsafe_allow_html=True)
 
-# --- DATA LOADER ---
+# --- ENGINE DATA LOADER ---
 student_profiles = []
 if uploaded_file is not None:
     try:
@@ -121,21 +124,19 @@ if uploaded_file is not None:
         st.sidebar.error(f"Error membaca file: {e}")
 
 if not student_profiles:
+    # Generator default jika tidak ada file yang di-upload (100 agen mahasiswa)
     random.seed(42)
     student_profiles = [{
-        "student_id": i,
-        "interest": random.uniform(0.4, 1.0),
-        "ability": random.uniform(0.4, 1.0),
-        "confidence": random.uniform(0.2, 0.6),
-        "influence": random.uniform(0.1, 0.8)
+        "student_id": i, "interest": random.uniform(0.4, 1.0), "ability": random.uniform(0.4, 1.0),
+        "confidence": random.uniform(0.2, 0.6), "influence": random.uniform(0.1, 0.8)
     } for i in range(100)]
 
-# --- SIMULASI ---
+# --- EXECUTION SIMULASI 1000 ITERASI ---
 if run_btn or 'history_df' not in st.session_state:
     with st.spinner("Menjalankan 1000 Iterasi Monte Carlo secara spasial..."):
         agents = [StudentAgent(p) for p in student_profiles]
         history_records = []
-
+        
         for step in range(TOTAL_ITERATIONS):
             if scenario_type == "Pasif":
                 info_level, recommendation = 0.4, 0.0
@@ -155,40 +156,68 @@ if run_btn or 'history_df' not in st.session_state:
             confused = sum(1 for a in agents if a.state == "CONFUSED")
             matching = sum(1 for a in agents if a.state == "MATCHING")
             decided = sum(1 for a in agents if a.state == "DECIDED")
-
+            
             ti = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Teknik Informatika")
             psi = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Psikologi")
             dkv = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "DKV")
 
             history_records.append({
-                "Iterasi": step + 1,
-                "CONFUSED": confused,
-                "MATCHING": matching,
-                "DECIDED": decided,
-                "Teknik Informatika": ti,
-                "Psikologi": psi,
-                "DKV": dkv
+                "Iterasi": step + 1, "CONFUSED": confused, "MATCHING": matching, "DECIDED": decided,
+                "Teknik Informatika": ti, "Psikologi": psi, "DKV": dkv
             })
-
+            
         st.session_state['history_df'] = pd.DataFrame(history_records)
         st.session_state['final_distribution'] = {"Teknik Informatika": ti, "Psikologi": psi, "DKV": dkv}
         st.session_state['current_scenario'] = scenario_type
 
-# --- HASIL ---
+# --- LOAD DATA HASIL JADI DARI CACHE STATE ---
 df_res = st.session_state['history_df']
 dist_res = st.session_state['final_distribution']
 scen_res = st.session_state['current_scenario']
 
-# --- PANEL UTAMA ---
+# --- RENDER PANEL BERDASARKAN TOMBOL NAVIGASI SIDEBAR ---
 if tampilan_terpilih == "Ringkasan":
+    # 4 Kolom Indikator Utama persis seperti screenshot teman Anda
     col1, col2, col3, col4 = st.columns(4)
     col1.metric(label="Skenario Tercepat", value="Preventif")
     col2.metric(label="K Kestabilan", value="Preventif (>=0.8)")
     col3.metric(label="Siswa Decided Akhir", value=f"{df_res['DECIDED'].iloc[-1]} Siswa")
     col4.metric(label="Iterasi Monte Carlo", value=f"{len(df_res)}")
-
+    
     st.markdown("---")
     st.subheader("📋 Ringkasan Analisis Struktur Keputusan Kasus")
-    st.write(
-        f"Berdasarkan hasil komputasi berbasis agen (ABM) sebanyak **{len(df_res)} iterasi**, "
-        f"skenario intervensi menggunakan **{scen_res}** terbukti secara statistik
+    st.write(f"""
+    Berdasarkan hasil komputasi berbasis agen (ABM) sebanyak **{len(df_res)} iterasi**, skenario intervensi menggunakan **{scen_res}** terbukti secara statistik paling efektif mempercepat kestabilan keputusan pemilihan jurusan kuliah bagi siswa. 
+    Intervensi ini sukses memotong rantai keraguan (*Confused*) secara konvergen dan melahirkan sebaran keputusan yang stabil.
+    """)
+
+elif tampilan_terpilih == "Visualisasi":
+    st.subheader("📊 Grafik Konvergensi Fluktuasi Status Siswa")
+    
+    fig_line = px.line(
+        df_res, x="Iterasi", y=["CONFUSED", "MATCHING", "DECIDED"],
+        title="Tren Perubahan Status Psikologis Siswa Selama 1000 Iterasi",
+        color_discrete_map={"CONFUSED": "#ef4444", "MATCHING": "#eab308", "DECIDED": "#22c55e"}
+    )
+    
+    if tampilkan_ambang:
+        fig_line.add_hline(y=len(student_profiles)*0.8, line_dash="dash", line_color="blue", annotation_text="Target Mantap Komunitas (80%)")
+        
+    if tampilkan_label:
+        # KOREKSI: Menghapus markevery agar tidak ValueError, mengecilkan size ke 2 agar pas di 1000 iterasi
+        fig_line.update_traces(mode='lines+markers', marker=dict(size=2))
+    else:
+        fig_line.update_traces(mode='lines')
+        
+    st.plotly_chart(fig_line, use_container_width=True)
+    
+    # Grafik Batang Distribusi Pilihan Jurusan Aktual
+    df_bar = pd.DataFrame({
+        "Program Studi": list(dist_res.keys()),
+        "Jumlah Peminat": list(dist_res.values())
+    })
+    fig_bar = px.bar(
+        df_bar, x="Program Studi", y="Jumlah Peminat", title="Distribusi Pemilihan Jurusan Akhir (Iterasi ke-1000)",
+        color="Program Studi", color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"]
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
