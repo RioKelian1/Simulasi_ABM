@@ -1,651 +1,316 @@
-import warnings
-warnings.filterwarnings("ignore")
-
 import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import random
+from collections import Counter
+from io import BytesIO
 
-# =====================================================
-# PAGE CONFIG
-# =====================================================
+# ========== SETUP ==========
+st.set_page_config(page_title="ABM Pemilihan Jurusan", layout="wide")
+st.title("🎓 Simulasi Pemilihan Jurusan Kuliah dengan ABM")
+st.markdown("**Faktor: Interest, Skill, Nilai, Pengaruh Teman** | 3 Skenario: Pasif, Reaktif, Preventif")
 
-st.set_page_config(
-    page_title="ABM Pemilihan Jurusan",
-    page_icon="🎓",
-    layout="wide"
-)
+# ========== PARAMETER TETAP ==========
+NUM_AGENTS = 200
+NUM_SEMESTERS = 10          # internal, TIDAK DITAMPILKAN
+MONTE_CARLO_ITER = 1000
+JURUSAN = ["Teknik Informatika", "Manajemen", "Psikologi"]
 
-# =====================================================
-# TITLE
-# =====================================================
+# ========== KELAS AGENT ==========
+class Student:
+    def __init__(self, agent_id, custom_profile=None):
+        self.id = agent_id
+        if custom_profile:
+            self.interest = custom_profile["interest"]
+            self.skill = custom_profile["skill"]
+            self.nilai = custom_profile["nilai"]
+        else:
+            self.interest = {j: random.uniform(0.2, 0.9) for j in JURUSAN}
+            self.skill = {j: random.uniform(0.2, 0.9) for j in JURUSAN}
+            self.nilai = {j: random.uniform(0.3, 1.0) for j in JURUSAN}
+        self.state = "Belum Memilih"
+        self.exploration_progress = 0.0
+        self.final_choice = None
+        self.teman = random.sample(range(NUM_AGENTS), k=random.randint(2,5))
+        self.teman = [t for t in self.teman if t != self.id]
 
-st.title("🎓 Simulasi Pemilihan Jurusan Kuliah")
-st.subheader("Agent-Based Modeling + Monte Carlo Simulation")
+    def hitung_skor(self, pengaruh_teman):
+        skor = {}
+        for j in JURUSAN:
+            skor[j] = (0.4 * self.interest[j] +
+                       0.3 * self.skill[j] +
+                       0.2 * self.nilai[j] +
+                       0.1 * pengaruh_teman.get(j, 0))
+        return skor
 
-# =====================================================
-# SIDEBAR
-# =====================================================
+def pilih_jurusan(agent, pengaruh_teman):
+    skor = agent.hitung_skor(pengaruh_teman)
+    probs = np.array([skor[j] + random.uniform(0, 0.1) for j in JURUSAN])
+    probs = probs / probs.sum()
+    return np.random.choice(JURUSAN, p=probs)
 
-st.sidebar.header("⚙️ Pengaturan Simulasi")
+def hitung_pengaruh_teman(agents, agent_id):
+    pengaruh = {j: 0 for j in JURUSAN}
+    agent = agents[agent_id]
+    for tid in agent.teman:
+        if tid < len(agents) and agents[tid].final_choice:
+            jurusan_teman = agents[tid].final_choice
+            pengaruh[jurusan_teman] += 0.2
+    total = sum(pengaruh.values())
+    if total > 0:
+        for j in pengaruh:
+            pengaruh[j] = min(pengaruh[j] / total, 1.0)
+    return pengaruh
 
-num_agents = st.sidebar.slider(
-    "Jumlah Agent",
-    50,
-    1000,
-    200
-)
+def run_simulation(intervention_type, custom_profiles=None):
+    agents = []
+    for i in range(NUM_AGENTS):
+        if custom_profiles and i < len(custom_profiles):
+            agents.append(Student(i, custom_profiles[i]))
+        else:
+            agents.append(Student(i))
+    for sem in range(NUM_SEMESTERS):   # internal, tidak direkam ke output
+        for ag in agents:
+            if ag.state == "Memutuskan":
+                continue
+            if ag.state == "Belum Memilih" and random.random() < 0.3:
+                ag.state = "Eksplorasi"
+            if ag.state == "Eksplorasi":
+                gain = 0.2 + random.uniform(-0.05, 0.05)
+                if intervention_type == "preventif":
+                    gain += 0.2
+                elif intervention_type == "reaktif" and sem >= 3 and ag.state == "Belum Memilih":
+                    gain += 0.15
+                ag.exploration_progress += gain
+                if ag.exploration_progress >= 1.0:
+                    pengaruh = hitung_pengaruh_teman(agents, ag.id)
+                    ag.final_choice = pilih_jurusan(ag, pengaruh)
+                    ag.state = "Memutuskan"
+    return Counter(ag.state for ag in agents), Counter(ag.final_choice for ag in agents if ag.final_choice)
 
-iterations = st.sidebar.slider(
-    "Monte Carlo Iteration",
-    100,
-    5000,
-    1000
-)
+def monte_carlo(intervention_type, custom_profiles=None):
+    all_state, all_choice = [], []
+    for _ in range(MONTE_CARLO_ITER):
+        sc, cc = run_simulation(intervention_type, custom_profiles)
+        all_state.append(sc)
+        all_choice.append(cc)
+    avg_state = {s: np.mean([d.get(s,0) for d in all_state]) / NUM_AGENTS * 100 
+                 for s in ["Belum Memilih","Eksplorasi","Memutuskan"]}
+    avg_choice = {j: np.mean([d.get(j,0) for d in all_choice]) / NUM_AGENTS * 100 
+                  for j in JURUSAN}
+    return avg_state, avg_choice
 
-scenario = st.sidebar.selectbox(
-    "Pilih Skenario",
-    [
-        "Tanpa Intervensi",
-        "Reaktif",
-        "Preventif"
-    ]
-)
+# ========== SIDEBAR ==========
+st.sidebar.header("Upload Data Profil Siswa (Opsional)")
+uploaded_file = st.sidebar.file_uploader("CSV (interest, skill, nilai)", type="csv")
+custom_profiles = None
+if uploaded_file:
+    df_custom = pd.read_csv(uploaded_file)
+    required = ["interest_TI","interest_Manajemen","interest_Psikologi",
+                "skill_TI","skill_Manajemen","skill_Psikologi",
+                "nilai_TI","nilai_Manajemen","nilai_Psikologi"]
+    if all(col in df_custom.columns for col in required):
+        custom_profiles = []
+        for _, row in df_custom.iterrows():
+            profile = {
+                "interest": {JURUSAN[0]: row["interest_TI"], JURUSAN[1]: row["interest_Manajemen"], JURUSAN[2]: row["interest_Psikologi"]},
+                "skill": {JURUSAN[0]: row["skill_TI"], JURUSAN[1]: row["skill_Manajemen"], JURUSAN[2]: row["skill_Psikologi"]},
+                "nilai": {JURUSAN[0]: row["nilai_TI"], JURUSAN[1]: row["nilai_Manajemen"], JURUSAN[2]: row["nilai_Psikologi"]}
+            }
+            custom_profiles.append(profile)
+        st.sidebar.success("Data profil berhasil dimuat")
+    else:
+        st.sidebar.error("Format CSV salah")
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Dataset CSV",
-    type=["csv"]
-)
+if st.sidebar.button("🚀 Jalankan Simulasi (1000 iterasi Monte Carlo)"):
+    with st.spinner("Menjalankan Monte Carlo..."):
+        results = {}
+        for scenario in ["pasif", "reaktif", "preventif"]:
+            avg_state, avg_choice = monte_carlo(scenario, custom_profiles)
+            results[scenario] = {"state": avg_state, "choice": avg_choice}
+        st.session_state['results'] = results
+        st.success("Simulasi selesai!")
 
-# =====================================================
-# STATES
-# =====================================================
-
-states = [
-
-    "Belum Memilih",
-
-    "Eksplorasi",
-
-    "Matching",
-
-    "Sudah Memutuskan"
-]
-
-# =====================================================
-# GENERATE AGENT
-# =====================================================
-
-def generate_agents(total_agent):
-
-    data = []
-
-    for i in range(total_agent):
-
-        data.append({
-
-            "id": i,
-
-            "logic": random.uniform(0,1),
-
-            "creativity": random.uniform(0,1),
-
-            "social": random.uniform(0,1),
-
-            "economy": random.uniform(0,1),
-
-            "confidence": random.uniform(0.3,1.0),
-
-            "motivation": random.uniform(0.3,1.0),
-
-            "information_access": random.uniform(0.3,1.0),
-
-            # =====================================
-            # PSYCHOLOGICAL VARIABLES
-            # =====================================
-
-            "stress_level": random.uniform(0.2,0.7),
-
-            "resilience": random.uniform(0.3,1.0),
-
-            "distortion": random.uniform(0.2,1.0),
-
-            "state": "Belum Memilih"
+# ========== DASHBOARD (setelah simulasi selesai) ==========
+if 'results' in st.session_state:
+    res = st.session_state['results']
+    
+    # Sidebar navigasi
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🧭 Navigasi")
+    menu = st.sidebar.radio("Pilih tampilan", ["Ringkasan", "Visualisasi", "Analisis Statistik", "Data Mentah"])
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🎛️ Kontrol Tampilan")
+    show_threshold = st.sidebar.checkbox("Tampilkan ambang batas 70%", value=True)
+    show_labels = st.sidebar.checkbox("Tampilkan label angka pada grafik", value=False)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📁 Sumber Data")
+    st.sidebar.info("Data dari 1000 iterasi Monte Carlo, 200 agent.")
+    
+    # ========== RINGKASAN ==========
+    if menu == "Ringkasan":
+        st.header("📋 Ringkasan Hasil Simulasi")
+        
+        best_scenario = max(res.keys(), key=lambda s: res[s]["state"]["Memutuskan"])
+        # Skenario dengan % belum memilih terendah = yang paling berhasil
+        best_choice = min(res.keys(), key=lambda s: res[s]["state"]["Belum Memilih"])
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("🎯 Skenario dengan % Memutuskan Tertinggi", best_scenario.capitalize(), 
+                      delta=f"{res[best_scenario]['state']['Memutuskan']:.1f}%")
+        with col2:
+            st.metric("✅ Skenario Paling Efektif (% Belum Memilih terendah)", best_choice.capitalize(),
+                      delta=f"{res[best_choice]['state']['Belum Memilih']:.1f}%")
+        with col3:
+            st.metric("🔁 Iterasi Monte Carlo", f"{MONTE_CARLO_ITER}")
+        
+        st.subheader("💡 Inti Temuan")
+        st.markdown(f"""
+        - **Skenario Preventif** menghasilkan persentase siswa yang berhasil memutuskan jurusan tertinggi ({res['preventif']['state']['Memutuskan']:.1f}%).
+        - **Skenario Pasif** (tanpa intervensi) menyebabkan {res['pasif']['state']['Belum Memilih']:.1f}% siswa masih belum memutuskan.
+        - **Intervensi Reaktif** efektif menurunkan jumlah siswa yang belum memutuskan menjadi {res['reaktif']['state']['Belum Memilih']:.1f}%.
+        - Distribusi pilihan jurusan bervariasi antar skenario. Pada preventif, pilihan cenderung lebih merata.
+        """)
+        
+        # Bar chart perbandingan metrik utama
+        st.subheader("📊 Perbandingan Metrik Utama")
+        df_metrics = pd.DataFrame({
+            "Skenario": ["Pasif", "Reaktif", "Preventif"],
+            "% Memutuskan": [res["pasif"]["state"]["Memutuskan"], res["reaktif"]["state"]["Memutuskan"], res["preventif"]["state"]["Memutuskan"]],
+            "% Belum Memilih": [res["pasif"]["state"]["Belum Memilih"], res["reaktif"]["state"]["Belum Memilih"], res["preventif"]["state"]["Belum Memilih"]]
         })
-
-    return pd.DataFrame(data)
-
-# =====================================================
-# LOAD DATASET
-# =====================================================
-
-if uploaded_file is not None:
-
-    df_agents = pd.read_csv(uploaded_file)
-
-    st.success("Dataset berhasil diupload!")
-
+        fig, ax = plt.subplots(figsize=(10,6))
+        df_metrics.plot(x="Skenario", y=["% Memutuskan", "% Belum Memilih"], kind="bar", ax=ax, color=['green','red'])
+        ax.set_ylabel("Persen Agent")
+        if show_labels:
+            for container in ax.containers:
+                ax.bar_label(container, fmt='%.1f')
+        if show_threshold:
+            ax.axhline(y=70, color='blue', linestyle='--', label='Batas 70%')
+            ax.legend()
+        st.pyplot(fig)
+    
+    # ========== VISUALISASI ==========
+    elif menu == "Visualisasi":
+        st.header("📈 Grafik Analitik")
+        
+        # Bar chart perbandingan % memutuskan untuk ketiga skenario
+        st.subheader("Perbandingan % Agent yang Memutuskan")
+        fig1, ax1 = plt.subplots(figsize=(8,6))
+        scenarios = list(res.keys())
+        decided = [res[s]["state"]["Memutuskan"] for s in scenarios]
+        bars = ax1.bar(scenarios, decided, color=['red','orange','green'])
+        ax1.set_ylabel("Persen Agent")
+        ax1.set_ylim(0,100)
+        if show_labels:
+            for bar in bars:
+                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, f'{bar.get_height():.1f}%', ha='center')
+        if show_threshold:
+            ax1.axhline(y=70, color='blue', linestyle='--', label='Batas 70%')
+            ax1.legend()
+        st.pyplot(fig1)
+        
+        # Distribusi pilihan jurusan (stacked bar)
+        st.subheader("Distribusi Pilihan Jurusan per Skenario")
+        df_choice = pd.DataFrame({
+            "Skenario": [],
+            "Jurusan": [],
+            "Persen": []
+        })
+        for s in res:
+            for j in JURUSAN:
+                df_choice.loc[len(df_choice)] = [s.capitalize(), j, res[s]["choice"][j]]
+        fig2, ax2 = plt.subplots(figsize=(10,6))
+        sns.barplot(data=df_choice, x="Skenario", y="Persen", hue="Jurusan", ax=ax2)
+        ax2.set_ylabel("Persen Agent")
+        if show_labels:
+            for container in ax2.containers:
+                ax2.bar_label(container, fmt='%.1f')
+        st.pyplot(fig2)
+        
+        # Pie chart untuk skenario preventif
+        st.subheader("Distribusi Jurusan - Skenario Preventif")
+        fig3, ax3 = plt.subplots()
+        ax3.pie(res["preventif"]["choice"].values(), labels=res["preventif"]["choice"].keys(), autopct="%1.1f%%", startangle=90)
+        ax3.axis('equal')
+        st.pyplot(fig3)
+    
+    # ========== ANALISIS STATISTIK ==========
+    elif menu == "Analisis Statistik":
+        st.header("📐 Analisis Statistik")
+        
+        # Boxplot variabilitas (30 sampel per skenario)
+        st.subheader("Variabilitas Jumlah Agent per State (30 sampel Monte Carlo)")
+        box_data = []
+        for scenario in res.keys():
+            for _ in range(30):
+                sc, _ = run_simulation(scenario, custom_profiles)
+                for s in ["Belum Memilih", "Eksplorasi", "Memutuskan"]:
+                    box_data.append({"Skenario": scenario, "State": s, "Jumlah": sc.get(s,0)})
+        df_box = pd.DataFrame(box_data)
+        fig, ax = plt.subplots(figsize=(12,6))
+        sns.boxplot(data=df_box, x="Skenario", y="Jumlah", hue="State", ax=ax)
+        ax.set_ylabel("Jumlah Agent")
+        st.pyplot(fig)
+        
+        # Heatmap korelasi pilihan jurusan antar skenario
+        st.subheader("Korelasi Persentase Pilihan Jurusan antar Skenario")
+        df_corr = pd.DataFrame({
+            "Pasif": [res["pasif"]["choice"][j] for j in JURUSAN],
+            "Reaktif": [res["reaktif"]["choice"][j] for j in JURUSAN],
+            "Preventif": [res["preventif"]["choice"][j] for j in JURUSAN]
+        }, index=JURUSAN)
+        corr_matrix = df_corr.T.corr()
+        fig2, ax2 = plt.subplots(figsize=(8,6))
+        sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", ax=ax2)
+        st.pyplot(fig2)
+        
+        # Tabel ringkasan
+        st.subheader("Tabel Ringkasan Hasil")
+        stats_df = pd.DataFrame({
+            "Skenario": ["Pasif", "Reaktif", "Preventif"],
+            "Memutuskan (%)": [res["pasif"]["state"]["Memutuskan"], res["reaktif"]["state"]["Memutuskan"], res["preventif"]["state"]["Memutuskan"]],
+            "Belum Memilih (%)": [res["pasif"]["state"]["Belum Memilih"], res["reaktif"]["state"]["Belum Memilih"], res["preventif"]["state"]["Belum Memilih"]],
+            "Eksplorasi (%)": [res["pasif"]["state"]["Eksplorasi"], res["reaktif"]["state"]["Eksplorasi"], res["preventif"]["state"]["Eksplorasi"]],
+            "TI (%)": [res["pasif"]["choice"]["Teknik Informatika"], res["reaktif"]["choice"]["Teknik Informatika"], res["preventif"]["choice"]["Teknik Informatika"]],
+            "Manajemen (%)": [res["pasif"]["choice"]["Manajemen"], res["reaktif"]["choice"]["Manajemen"], res["preventif"]["choice"]["Manajemen"]],
+            "Psikologi (%)": [res["pasif"]["choice"]["Psikologi"], res["reaktif"]["choice"]["Psikologi"], res["preventif"]["choice"]["Psikologi"]]
+        })
+        st.dataframe(stats_df)
+    
+    # ========== DATA MENTAH ==========
+    elif menu == "Data Mentah":
+        st.header("📄 Data Hasil Simulasi (CSV)")
+        df_export = pd.DataFrame({
+            "Skenario": [],
+            "Belum_Memilih_%": [],
+            "Eksplorasi_%": [],
+            "Memutuskan_%": [],
+            "Teknik_Informatika_%": [],
+            "Manajemen_%": [],
+            "Psikologi_%": []
+        })
+        for scenario, data in res.items():
+            df_export.loc[len(df_export)] = [
+                scenario,
+                data["state"]["Belum Memilih"],
+                data["state"]["Eksplorasi"],
+                data["state"]["Memutuskan"],
+                data["choice"]["Teknik Informatika"],
+                data["choice"]["Manajemen"],
+                data["choice"]["Psikologi"]
+            ]
+        st.dataframe(df_export)
+        csv_buffer = BytesIO()
+        df_export.to_csv(csv_buffer, index=False)
+        st.download_button("📥 Download CSV", data=csv_buffer.getvalue(), file_name="hasil_monte_carlo.csv", mime="text/csv")
+        
+        st.subheader("📁 Sumber Data")
+        st.info("Data merupakan hasil agregasi 1000 iterasi Monte Carlo dengan 200 agent. Parameter internal: 10 semester (tidak ditampilkan), probabilitas transisi, dan faktor bobot interest, skill, nilai, teman.")
 else:
-
-    df_agents = generate_agents(num_agents)
-
-# =====================================================
-# MAJOR PROFILE
-# =====================================================
-
-majors = {
-
-    "Teknik Informatika": {
-        "logic": 0.95,
-        "creativity": 0.70,
-        "social": 0.40
-    },
-
-    "Desain Komunikasi Visual": {
-        "logic": 0.40,
-        "creativity": 0.95,
-        "social": 0.60
-    },
-
-    "Psikologi": {
-        "logic": 0.55,
-        "creativity": 0.65,
-        "social": 0.95
-    },
-
-    "Manajemen": {
-        "logic": 0.70,
-        "creativity": 0.60,
-        "social": 0.80
-    },
-
-    "Kedokteran": {
-        "logic": 0.95,
-        "creativity": 0.50,
-        "social": 0.85
-    }
-}
-
-# =====================================================
-# MONTE CARLO NOISE
-# =====================================================
-
-def monte_carlo_noise():
-
-    return np.random.normal(0, 0.05)
-
-# =====================================================
-# STRESSOR EVENT
-# =====================================================
-
-def stressor_event():
-
-    return random.uniform(0, 0.3)
-
-# =====================================================
-# MATCH SCORE
-# =====================================================
-
-def calculate_match(agent, profile):
-
-    score = (
-
-        (agent["logic"] * profile["logic"]) +
-
-        (agent["creativity"] * profile["creativity"]) +
-
-        (agent["social"] * profile["social"]) +
-
-        (agent["motivation"] * 0.8) +
-
-        (agent["information_access"] * 0.7)
-
-    ) / 5
-
-    # =====================================
-    # STRESS EFFECT
-    # =====================================
-
-    score -= (agent["stress_level"] * 0.3)
-
-    # =====================================
-    # MONTE CARLO NOISE
-    # =====================================
-
-    score += monte_carlo_noise()
-
-    return max(0, min(1, score))
-
-# =====================================================
-# CHOOSE MAJOR
-# =====================================================
-
-def choose_major(agent):
-
-    scores = {}
-
-    for major_name, profile in majors.items():
-
-        score = calculate_match(
-            agent,
-            profile
-        )
-
-        scores[major_name] = score
-
-    best_major = max(scores, key=scores.get)
-
-    best_score = max(scores.values())
-
-    return best_major, best_score
-
-# =====================================================
-# INTERVENTION
-# =====================================================
-
-def intervention(agent, scenario):
-
-    # =====================================
-    # TANPA INTERVENSI
-    # =====================================
-
-    if scenario == "Tanpa Intervensi":
-
-        return agent
-
-    # =====================================
-    # REAKTIF
-    # =====================================
-
-    elif scenario == "Reaktif":
-
-        if agent["stress_level"] > 0.7:
-
-            agent["stress_level"] -= 0.2
-
-            agent["confidence"] += 0.1
-
-    # =====================================
-    # PREVENTIF
-    # =====================================
-
-    elif scenario == "Preventif":
-
-        agent["stress_level"] -= 0.1
-
-        agent["confidence"] += 0.05
-
-        agent["motivation"] += 0.05
-
-    # =====================================
-    # LIMIT
-    # =====================================
-
-    agent["stress_level"] = max(
-        0,
-        min(1, agent["stress_level"])
-    )
-
-    agent["confidence"] = min(
-        1,
-        agent["confidence"]
-    )
-
-    agent["motivation"] = min(
-        1,
-        agent["motivation"]
-    )
-
-    return agent
-
-# =====================================================
-# UPDATE STATE
-# =====================================================
-
-def update_state(agent, best_score):
-
-    current_state = agent["state"]
-
-    # =====================================
-    # FINAL STATE LOCK
-    # =====================================
-
-    if current_state == "Sudah Memutuskan":
-
-        return agent
-
-    # =====================================
-    # HIGH STRESS RESET
-    # =====================================
-
-    if agent["stress_level"] > 0.85:
-
-        agent["state"] = "Belum Memilih"
-
-        return agent
-
-    # =====================================
-    # BELUM MEMILIH
-    # =====================================
-
-    if current_state == "Belum Memilih":
-
-        if (
-            agent["confidence"] > 0.4 and
-            random.random() < 0.8
-        ):
-
-            agent["state"] = "Eksplorasi"
-
-    # =====================================
-    # EKSPLORASI
-    # =====================================
-
-    elif current_state == "Eksplorasi":
-
-        if (
-            best_score > 0.65 and
-            random.random() < 0.7
-        ):
-
-            agent["state"] = "Matching"
-
-    # =====================================
-    # MATCHING
-    # =====================================
-
-    elif current_state == "Matching":
-
-        if (
-            best_score > 0.75 and
-            random.random() < 0.8
-        ):
-
-            agent["state"] = "Sudah Memutuskan"
-
-    return agent
-
-# =====================================================
-# RUN SIMULATION
-# =====================================================
-
-simulation_history = []
-
-simulation_agents = df_agents.copy()
-
-progress_bar = st.progress(0)
-
-for iteration in range(iterations):
-
-    for idx, row in simulation_agents.iterrows():
-
-        agent = row.to_dict()
-
-        # =====================================
-        # STRESSOR EVENT
-        # =====================================
-
-        stress = stressor_event()
-
-        agent["stress_level"] += (
-            stress *
-            agent["distortion"]
-        )
-
-        # =====================================
-        # RESILIENCE RECOVERY
-        # =====================================
-
-        agent["stress_level"] -= (
-            agent["resilience"] * 0.05
-        )
-
-        # =====================================
-        # LIMIT
-        # =====================================
-
-        agent["stress_level"] = max(
-            0,
-            min(1, agent["stress_level"])
-        )
-
-        # =====================================
-        # INTERVENTION
-        # =====================================
-
-        updated_agent = intervention(
-            agent,
-            scenario
-        )
-
-        # =====================================
-        # CHOOSE MAJOR
-        # =====================================
-
-        major, best_score = choose_major(
-            updated_agent
-        )
-
-        # =====================================
-        # UPDATE STATE
-        # =====================================
-
-        updated_agent = update_state(
-            updated_agent,
-            best_score
-        )
-
-        # =====================================
-        # SAVE AGENT
-        # =====================================
-
-        simulation_agents.at[idx, "state"] = updated_agent["state"]
-
-        simulation_agents.at[idx, "stress_level"] = updated_agent["stress_level"]
-
-        simulation_agents.at[idx, "confidence"] = updated_agent["confidence"]
-
-        simulation_agents.at[idx, "motivation"] = updated_agent["motivation"]
-
-        # =====================================
-        # SAVE HISTORY
-        # =====================================
-
-        simulation_history.append({
-
-            "iteration": iteration,
-
-            "agent_id": updated_agent["id"],
-
-            "scenario": scenario,
-
-            "state": updated_agent["state"],
-
-            "selected_major": major,
-
-            "score": best_score,
-
-            "stress_level": updated_agent["stress_level"]
-        })
-
-    progress_bar.progress(
-        (iteration + 1) / iterations
-    )
-
-df_simulation = pd.DataFrame(
-    simulation_history
-)
-
-# =====================================================
-# FINAL STATE
-# =====================================================
-
-latest_states = df_simulation.sort_values(
-    "iteration"
-).groupby(
-    "agent_id"
-).tail(1)
-
-state_counts = latest_states["state"].value_counts()
-
-# =====================================================
-# STATUS METRIC
-# =====================================================
-
-st.subheader("🧠 Status Agent")
-
-col1, col2 = st.columns(2)
-
-with col1:
-
-    st.metric(
-        "Belum Memilih",
-        int(state_counts.get("Belum Memilih",0))
-    )
-
-    st.metric(
-        "Eksplorasi",
-        int(state_counts.get("Eksplorasi",0))
-    )
-
-with col2:
-
-    st.metric(
-        "Matching",
-        int(state_counts.get("Matching",0))
-    )
-
-    st.metric(
-        "Sudah Memutuskan",
-        int(state_counts.get("Sudah Memutuskan",0))
-    )
-
-# =====================================================
-# PIE CHART
-# =====================================================
-
-st.subheader("🥧 Persentase Final State")
-
-fig1, ax1 = plt.subplots(figsize=(7,7))
-
-ax1.pie(
-    state_counts.values,
-    labels=state_counts.index,
-    autopct='%1.1f%%'
-)
-
-st.pyplot(fig1)
-
-# =====================================================
-# DISTRIBUSI JURUSAN
-# =====================================================
-
-st.subheader("📊 Distribusi Jurusan")
-
-fig2, ax2 = plt.subplots(figsize=(10,5))
-
-sns.countplot(
-    data=latest_states,
-    x="selected_major",
-    ax=ax2
-)
-
-plt.xticks(rotation=15)
-
-st.pyplot(fig2)
-
-# =====================================================
-# MONTE CARLO TREND
-# =====================================================
-
-st.subheader("📈 Trend Monte Carlo")
-
-trend = df_simulation.groupby(
-    "iteration"
-)["score"].mean()
-
-fig3, ax3 = plt.subplots(figsize=(12,5))
-
-ax3.plot(trend)
-
-ax3.set_xlabel("Iteration")
-
-ax3.set_ylabel("Average Score")
-
-ax3.set_title("Monte Carlo Trend")
-
-st.pyplot(fig3)
-
-# =====================================================
-# HEATMAP
-# =====================================================
-
-st.subheader("🔥 Heatmap State")
-
-pivot = pd.pivot_table(
-    df_simulation,
-    values="score",
-    index="state",
-    columns="scenario",
-    aggfunc=np.mean
-)
-
-fig4, ax4 = plt.subplots(figsize=(8,4))
-
-sns.heatmap(
-    pivot,
-    annot=True,
-    cmap="viridis",
-    ax=ax4
-)
-
-st.pyplot(fig4)
-
-# =====================================================
-# STRESS DISTRIBUTION
-# =====================================================
-
-st.subheader("😵 Distribusi Stress Level")
-
-fig5, ax5 = plt.subplots(figsize=(10,5))
-
-sns.histplot(
-    latest_states["stress_level"],
-    kde=True,
-    ax=ax5
-)
-
-st.pyplot(fig5)
-
-# =====================================================
-# FINAL TABLE
-# =====================================================
-
-st.subheader("📋 Final State Agent")
-
-st.dataframe(
-    latest_states[
-        [
-            "agent_id",
-            "state",
-            "selected_major",
-            "score",
-            "stress_level"
-        ]
-    ]
-)
-
-# =====================================================
-# DOWNLOAD CSV
-# =====================================================
-
-csv = df_simulation.to_csv(index=False)
-
-st.download_button(
-    label="⬇️ Download CSV",
-    data=csv,
-    file_name="simulation_results.csv",
-    mime="text/csv"
-)
+    st.info("👈 Klik 'Jalankan Simulasi' di sidebar untuk memulai.")
