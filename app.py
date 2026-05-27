@@ -3,171 +3,134 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import time
+import random
 
-# --- PENGATURAN HALAMAN DASHBOARD (MINGGU 16) ---
-st.set_page_config(
-    page_title="Simulasi ABM - Koping Kecemasan CBT", 
-    page_icon="🧠", 
-    layout="wide"
-)
+# --- CONFIG DASHBOARD ---
+st.set_page_config(page_title="Simulasi Pemilihan Jurusan ABM", page_icon="🎓", layout="wide")
+st.title("🎓 Dashboard Simulasi Pemilihan Jurusan Kuliah (ABM)")
+st.markdown("Mengukur efektivitas sistem rekomendasi (*Pasif, Reaktif, Preventif*) terhadap stabilitas keputusan siswa.")
 
-st.title("🧠 Dashboard Simulasi Dinamika Kecemasan Mahasiswa")
-st.markdown("### Pendekatan Agent-Based Modeling dengan Evaluasi Protokol CBT")
-st.markdown("""
-Dashboard ini dirancang sesuai dengan pedoman UAS untuk mensimulasikan bagaimana intervensi 
-*Cognitive Behavioral Therapy* (CBT) dapat meredam tingkat kecemasan mahasiswa terhadap stresor lingkungan.
-""")
+# --- KELAS AGEN & MODEL (SINKRON DENGAN COLAB ANDA) ---
+STABLE_WINDOW = 3
 
-# --- 1. DEFINISI AGEN & FORMULASI MATEMATIS (MINGGU 4 & MINGGU 6) ---
-class MahasiswaAgent:
-    def __init__(self, agent_id, skenario):
-        self.id = agent_id
-        # Atribut Internal Agen (Halaman 1 PDF)
-        self.anxiety = np.random.uniform(0.1, 0.4)       # Anxiety Level (A) awal: tenang
-        self.resilience = np.random.uniform(0.2, 0.5)    # Resilience (R)
+class StudentAgent:
+    def __init__(self, agent_id):
+        self.agent_id = agent_id
+        self.interest = random.uniform(0.4, 1.0)
+        self.ability = random.uniform(0.4, 1.0)
+        self.confidence = random.uniform(0.2, 0.6)
+        self.influence = random.uniform(0.1, 0.8)
+        self.x = random.randint(0, 19)
+        self.y = random.randint(0, 19)
+        self.state = "CONFUSED"
+        self.decision_streak = 0
+        self.chosen_major = None
+
+    def move(self):
+        self.x = (self.x + random.choice([-1, 0, 1])) % 20
+        self.y = (self.y + random.choice([-1, 0, 1])) % 20
+
+    def interact(self, nearby_agents):
+        decided_neighbors = sum(1 for agent in nearby_agents if agent.state == "DECIDED")
+        self.confidence += decided_neighbors * 0.01
+
+    def choose_major(self):
+        self.chosen_major = random.choice(["Teknik Informatika", "Psikologi", "DKV"])
+
+    def update_state(self, info_level, recommendation):
+        # Formulasi Matematis Minggu 4 dari Colab Anda
+        delta = (self.interest * self.ability * info_level * 0.08) - (self.influence * 0.05) + (recommendation * 0.07)
+        self.confidence = max(0.0, min(1.0, self.confidence + delta))
         
-        # Skenario 4: Distorsi Kognitif Tinggi
-        if skenario == "Skenario 4: Distorsi Kognitif Tinggi":
-            self.distortion = np.random.uniform(1.8, 2.5) # D diperburuk (Catastrophizing)
-        else:
-            self.distortion = np.random.uniform(1.0, 1.4) # D Normal (Distortion Factor)
-            
-        self.state = "TENANG" # State Chart awal (Minggu 2)
-
-    def update_anxiety(self, skenario, stressor_S, cbt_P_base):
-        # Menentukan nilai Protokol CBT (P) berdasarkan Skenario "What-If" (Minggu 12 & Halaman 2 PDF)
-        cbt_P = 0.0
-        
-        if skenario == "Skenario 1: Tanpa Intervensi":
-            cbt_P = 0.0 # Agen dibiarkan stres tanpa koping
-            
-        elif skenario == "Skenario 2: Reaktif":
-            # Intervensi CBT hanya diberikan secara reaktif jika tingkat kecemasan kritis (A > 0.8)
-            if self.anxiety > 0.8:
-                cbt_P = cbt_P_base
+        if self.confidence >= 0.8:
+            self.decision_streak += 1
+            if self.decision_streak >= STABLE_WINDOW:
+                self.state = "DECIDED"
+                if self.chosen_major is None:
+                    self.choose_major()
             else:
-                cbt_P = 0.0
-                
-        elif skenario == "Skenario 3: Preventif":
-            # Latihan koping rutin dilakukan di setiap iterasi waktu
-            cbt_P = cbt_P_base * 0.6
-            
-        elif skenario == "Skenario 4: Distorsi Kognitif Tinggi":
-            # Mendapat intervensi standar namun faktor distorsi internalnya tinggi
-            cbt_P = cbt_P_base
-
-        # --- ATURAN TRANSISI PERSAMAAN MATEMATIKA (Halaman 1 PDF) ---
-        # A_(t+1) = A_t + (S * D) - (R * P)
-        delta_A = (stressor_S * self.distortion) - (self.resilience * cbt_P)
-        self.anxiety += delta_A
-        
-        # Batasi nilai kecemasan pada skala numerik 0.0 - 1.0
-        self.anxiety = max(0.0, min(1.0, self.anxiety))
-
-        # --- UPDATE STATE CHART AGEN (MINGGU 2) ---
-        if self.anxiety > 0.8:
-            self.state = "PANIK"
-        elif self.anxiety > 0.5:
-            self.state = "CEMAS"
+                self.state = "MATCHING"
+        elif self.confidence >= 0.5:
+            self.decision_streak = 0
+            self.state = "MATCHING"
         else:
-            self.state = "TENANG"
+            self.decision_streak = 0
+            self.state = "CONFUSED"
 
-# --- 2. SIDEBAR KONTROL PARAMETER DAN SLIDER (MINGGU 16 / HALAMAN 3 PDF) ---
-st.sidebar.header("⚙️ Kontrol Parameter Simulasi")
+# --- SIDEBAR PARAMETER ---
+st.sidebar.header("⚙️ Pengaturan Simulasi")
+scenario_type = st.sidebar.selectbox("Pilih Skenario Intervensi:", ["Pasif", "Reaktif", "Preventif"])
+total_agents = st.sidebar.slider("Jumlah Siswa (Agent)", 10, 200, 50)
+total_iterations = st.sidebar.slider("Durasi Iterasi (Steps)", 10, 200, 100)
+run_btn = st.sidebar.button("▶️ Jalankan Simulasi")
 
-skenario_terpilih = st.sidebar.selectbox(
-    "Pilih Skenario Pengujian:",
-    [
-        "Skenario 1: Tanpa Intervensi",
-        "Skenario 2: Reaktif",
-        "Skenario 3: Preventif",
-        "Skenario 4: Distorsi Kognitif Tinggi"
-    ]
-)
-
-# Slider Tingkat Stresor Lingkungan yang diminta wajib ada di halaman 3 dokumen PDF
-stressor_S = st.sidebar.slider("Tingkat Stresor Lingkungan (S)", 0.0, 0.5, 0.2, 0.05)
-cbt_P_base = st.sidebar.slider("Kekuatan Protokol Intervensi CBT (P)", 0.1, 1.0, 0.5, 0.05)
-num_agents = st.sidebar.slider("Jumlah Mahasiswa (Populasi Agen)", 20, 300, 100, 10)
-steps = st.sidebar.slider("Durasi Waktu Pengamatan (Iterasi/Steps)", 50, 1000, 150, 50)
-
-run_simulation = st.sidebar.button("▶️ Jalankan Simulasi Koping CBT")
-
-# --- 3. JALANNYA EKSEKUSI MODEL RUNNER & VISUALISASI ---
-if run_simulation:
-    # Bangun populasi awal agen mahasiswa
-    populasi = [MahasiswaAgent(i, skenario_terpilih) for i in range(num_agents)]
-    
-    st.subheader(f"📊 Analisis Data Real-Time: {skenario_terpilih}")
-    
-    # Bungkus metrik ringkasan atas
-    col_m1, col_m2, col_m3 = st.columns(3)
-    m1 = col_m1.empty()
-    m2 = col_m2.empty()
-    m3 = col_m3.empty()
+# --- ENGINE SIMULASI ---
+if run_btn:
+    # Inisialisasi populasi agen
+    agents = [StudentAgent(i) for i in range(total_agents)]
+    history_records = []
     
     chart_placeholder = st.empty()
-    history_data = []
+    metric_placeholder = st.empty()
     progress_bar = st.progress(0)
 
-    # Loop Iterasi Waktu Utama (Monte Carlo Engine)
-    for t in range(steps):
-        tenang_count = sum(1 for a in populasi if a.state == "TENANG")
-        cemas_count = sum(1 for a in populasi if a.state == "CEMAS")
-        panik_count = sum(1 for a in populasi if a.state == "PANIK")
+    for step in range(total_iterations):
+        # Seting level parameter berdasarkan aturan Skenario Minggu 12 di Colab Anda
+        if scenario_type == "Pasif":
+            info_level = 0.4
+            recommendation = 0.0
+        elif scenario_type == "Reaktif":
+            info_level = 0.6
+            # Cek status decided terakhir untuk menentukan akselerasi rekomendasi
+            last_decided = history_records[-1]["DECIDED"] if len(history_records) > 0 else 0
+            recommendation = 0.7 if last_decided < (total_agents * 0.4) else 0.3
+        elif scenario_type == "Preventif":
+            info_level = 0.8
+            recommendation = 0.8
+
+        # Proses Spasial Mobilitas & Interaksi Agen
+        for agent in agents:
+            agent.move()
+            # Hitung tetangga terdekat (jarak Manhattan <= 2)
+            neighbors = [a for a in agents if a.agent_id != agent.agent_id and (abs(a.x - agent.x) + abs(a.y - agent.y)) <= 2]
+            agent.interact(neighbors)
+            agent.update_state(info_level, recommendation)
+
+        # Hitung statistik state step ini
+        confused = sum(1 for a in agents if a.state == "CONFUSED")
+        matching = sum(1 for a in agents if a.state == "MATCHING")
+        decided = sum(1 for a in agents if a.state == "DECIDED")
         
-        # Hitung rata-rata tingkat kecemasan populasi saat ini
-        avg_anxiety = np.mean([a.anxiety for a in populasi])
-        
-        # Isi Kartu Indikator Utama
-        m1.metric("Rata-rata Kecemasan Akut", f"{avg_anxiety:.2f}")
-        m2.metric("Jumlah Mahasiswa Panik (A > 0.8)", f"{panik_count}")
-        m3.metric("Kondisi Pulih/Tenang", f"{tenang_count}")
-        
-        # Rekam perkembangan data analisis (Minggu 14)
-        history_data.append({
-            "Waktu (Step)": t,
-            "Tenang": tenang_count,
-            "Cemas": cemas_count,
-            "Panik": panik_count,
-            "Rata-rata Kecemasan": avg_anxiety
-        })
-        df_history = pd.DataFrame(history_data)
-        
-        # Render Grafik Interaktif Plotly
+        ti = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Teknik Informatika")
+        psi = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "Psikologi")
+        dkv = sum(1 for a in agents if a.state == "DECIDED" and a.chosen_major == "DKV")
+
+        history_records.append({"Step": step, "CONFUSED": confused, "MATCHING": matching, "DECIDED": decided})
+        df_history = pd.DataFrame(history_records)
+
+        # Update Live Dashboard
+        with metric_placeholder.container():
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Siswa CONFUSED", confused)
+            col2.metric("Siswa MATCHING", matching)
+            col3.metric("Siswa DECIDED", decided, delta=f"+{decided}")
+
         with chart_placeholder.container():
-            col_graph_left, col_graph_right = st.columns(2)
-            
-            with col_graph_left:
-                # Tren Tingkat Kecemasan Rata-rata Sesuai UTS/UAS
-                fig_line = px.line(
-                    df_history, x="Waktu (Step)", y="Rata-rata Kecemasan",
-                    title="Kurva Fluktuasi Tingkat Kecemasan Populasi",
-                    color_discrete_sequence=["#3b82f6"]
-                )
-                fig_line.update_yaxes(range=[0, 1])
+            c1, c2 = st.columns(2)
+            with c1:
+                fig_line = px.line(df_history, x="Step", y=["CONFUSED", "MATCHING", "DECIDED"],
+                                   title="Kurva Perubahan State Pengambilan Keputusan",
+                                   color_discrete_map={"CONFUSED": "#ef4444", "MATCHING": "#eab308", "DECIDED": "#22c55e"})
                 st.plotly_chart(fig_line, use_container_width=True)
-                
-            with col_graph_right:
-                # Sebaran Transisi Kondisi Mental Mahasiswa
-                df_state = pd.DataFrame({
-                    "Kondisi Mental": ["Tenang", "Cemas", "Panik"],
-                    "Jumlah Mahasiswa": [tenang_count, cemas_count, panik_count]
-                })
-                fig_bar = px.bar(
-                    df_state, x="Kondisi Mental", y="Jumlah Mahasiswa",
-                    title="Distribusi Perubahan Kondisi Psikologis Mahasiswa",
-                    color="Kondisi Mental", color_discrete_sequence=["#22c55e", "#eab308", "#ef4444"]
-                )
+            with c2:
+                df_bar = pd.DataFrame({"Jurusan": ["Teknik Informatika", "Psikologi", "DKV"], "Jumlah": [ti, psi, dkv]})
+                fig_bar = px.bar(df_bar, x="Jurusan", y="Jumlah", title="Distribusi Pemilihan Jurusan Aktual",
+                                 color="Jurusan", color_discrete_sequence=["#3b82f6", "#a855f7", "#f59e0b"])
                 st.plotly_chart(fig_bar, use_container_width=True)
-                
-        # Perbarui kondisi kecemasan agen berdasarkan rumus matematika utama
-        for agent in populasi:
-            agent.update_anxiety(skenario_terpilih, stressor_S, cbt_P_base)
-            
-        progress_bar.progress((t + 1) / steps)
-        time.sleep(0.02)
-        
-    st.success(f"🎉 Pengujian {skenario_terpilih} berhasil divalidasi. Grafik menunjukkan efektivitas koping CBT secara berkala.")
+
+        progress_bar.progress((step + 1) / total_iterations)
+        time.sleep(0.03)
+
+    st.success(f"🎉 Simulasi skenario {scenario_type} selesai dijalankan!")
 else:
-    st.info("💡 Atur variabel 'Tingkat Stresor' di panel sidebar kiri, lalu klik **Jalankan Simulasi Koping CBT** untuk melihat grafik interaktif.")
+    st.info("💡 Pilih skenario di menu sidebar kiri, lalu klik tombol jalankan untuk melihat visualisasi analitik.")
